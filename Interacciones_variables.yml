@@ -1,0 +1,71 @@
+distancias:
+  Distances_Hidrogen_Bonds: 3.2
+  Distances_Aromatic: 5.5
+  Distances_Hidrofobica: 6
+  centroid_distance: 9
+  Distances_C_Simple : 1.54
+  Distances_C_Doble : 2.56
+  
+acceptors:
+  ALA: [O]
+  GLY: [O]
+  ILE: [O]
+  LEU: [O]
+  PRO: [O]
+  VAL: [O]
+  PHE: [O]
+  TRP: [O]
+  TYR: [O,OH]
+  ASP: [O,OD1,OD2]
+  GLU: [O,OE1,OE2]
+  ARG: [O]
+  HIS: [O]
+  LYS: [O]
+  SER: [O,OG]
+  THR: [O,OG1]
+  CYS: [O]
+  MET: [O]
+  ASN: [O,OD1]
+  GLN: [O,OE1]
+  HID: [O,NE2]
+  HIE: [O,ND1]
+
+acceptors_antecedent:
+  TYR: {'OH':'CZ'}
+  ASP: {'OD1':'CG', 'OD2':'CG'}
+  GLU: {'OE1':'CD' ,'OE2':'CD' }
+  SER: {'OG':'CB'}
+  THR: {'OG1':'CB'}
+  ASN: {'OD1':'CG'}
+  GLN: {'OE1':'CD'}
+  HID: {}
+  HIE: {}
+
+donors:
+  ALA: [N]
+  GLY: [N]
+  ILE: [N]
+  LEU: [N]
+  PRO: [N] ## Ojo aca revisar pdb el Nh
+  VAL: [N]
+  PHE: [N]
+  TRP: [N,HE1,NE1]
+  TYR: [N,HH]
+  ASP: [N]
+  GLU: [N]
+  ARG: [N,HNE,HH11,HH12,HH21,HH22,HE,NE,NH1,NH2]## ver bien esto
+  HIS: [N,ND1]
+  LYS: [N,HZ1,HZ2,HZ3,NZ]
+  SER: [N,HG]
+  THR: [N,HG1]
+  CYS: [N]
+  MET: [N]
+  ASN: [N,HD21,HD22,ND,ND2]
+  GLN: [N,HE21,HE22,NE2]
+  HID: [N,HD1]
+  HIE: [N,HE2]
+  HIP: [HE2,HD1]
+
+special:
+  HEM: [FE , 1.59] # Fe central grupo hemo
+
