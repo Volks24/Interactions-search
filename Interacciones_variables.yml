@@ -1,3 +1,7 @@
+options:
+  ligand_plot: 'Yes'
+  vmd_output: 'Yes'
+
 distancias:
   Distances_Hidrogen_Bonds: 3.2
   Distances_Aromatic: 5.5

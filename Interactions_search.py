@@ -173,6 +173,9 @@ def carga_variables():
     with open(r'Interacciones_variables.yml') as file:
         Interaciones = yaml.load(file, Loader=yaml.FullLoader)
 
+    ligand_plot = str(Interaciones['options']['ligand_plot'])
+    vmd_output = str(Interaciones['options']['vmd_output'])
+
     Distances_Hidrogen_Bonds =float(Interaciones['distancias']['Distances_Hidrogen_Bonds'])
     Distances_Aromatic = float(Interaciones['distancias']['Distances_Aromatic'])
     Distancia_Hidrofobica = float(Interaciones['distancias']['Distances_Hidrofobica'])
@@ -181,7 +184,7 @@ def carga_variables():
     Dadores_Prot = Interaciones['donors']
     Aceptot_antecedent = Interaciones['acceptors_antecedent']
     Special_case = Interaciones['special']
-    return(Distances_Hidrogen_Bonds,Distances_Aromatic,Distancia_Hidrofobica,Aceptores_Prot,Dadores_Prot,Aceptot_antecedent,Special_case)
+    return(ligand_plot,vmd_output,Distances_Hidrogen_Bonds,Distances_Aromatic,Distancia_Hidrofobica,Aceptores_Prot,Dadores_Prot,Aceptot_antecedent,Special_case)
 
 
 
@@ -469,15 +472,12 @@ def scripting_vmd(DF_Interacciones,receptor_points,aromatic_lig_df,DF_Lig,Prot,c
             VDM_TCL.write('graphics top color white\n')
             VDM_TCL.write('graphics top text [list $xm $ym $zm] [format "%.2f A" $distance]\n')
         if DF_Interacciones.iloc[j,5] == 'acceptor':
-            print(DF_Interacciones.iloc[j,:])
             # Receptor #
             # busco donnor #
             Recept = DF_Interacciones.iloc[j,0]
             Coord2 = np.array(receptor_points[(receptor_points['Pos'] == Recept) & (receptor_points['Atom'] == DF_Interacciones.iloc[j,2])][['X','Y','Z']])[0]
             # Ligand #
             atomo = DF_Interacciones.iloc[j,4]
-            print(atomo)
-            print(receptor_points)
             Coord1 = np.array(DF_Lig[(DF_Lig['Átomo'] == atomo)][['Coord X' , 'Coord Y' , 'Coord Z']])[0]
             VDM_TCL.write('graphics top color red\n')
             VDM_TCL.write('graphics top line {'+str(Coord1[0])+' '+str(Coord1[1])+' '+str(Coord1[2])+'} {'+str(Coord2[0])+' '+str(Coord2[1])+' '+str(Coord2[2])+'} width 5 style dashed\n')
@@ -504,8 +504,6 @@ def scripting_vmd(DF_Interacciones,receptor_points,aromatic_lig_df,DF_Lig,Prot,c
             Coord2 = np.array(receptor_points[(receptor_points['Pos'] == Recept) & (receptor_points['Atom'] == DF_Interacciones.iloc[j,2])][['X','Y','Z']])[0]
             # Ligand #
             atomo = DF_Interacciones.iloc[j,4]
-            print(atomo)
-            print(DF_Lig)
             Coord1 = np.array(DF_Lig[(DF_Lig['Átomo'] == atomo)][['Coord X' , 'Coord Y' , 'Coord Z']])[0]
             VDM_TCL.write('graphics top color yellow\n')
             VDM_TCL.write('graphics top line {'+str(Coord1[0])+' '+str(Coord1[1])+' '+str(Coord1[2])+'} {'+str(Coord2[0])+' '+str(Coord2[1])+' '+str(Coord2[2])+'} width 5 style dashed\n')
@@ -551,11 +549,6 @@ def remove_bias(file_path):
 
 if __name__ == '__main__':
 
-
-    # plotear interaciones (Yes , No)
-    ligand_plot = 'Yes'
-    vmd_output ='Yes'
-
     parser = argparse.ArgumentParser(description='Script para evaluar interacciones.')
     
     parser.add_argument('-r', '--receptor_pdb', required=True, help='Archivo PDB del receptor.')
@@ -575,7 +568,7 @@ if __name__ == '__main__':
     threshold_PH = 4
     numero_anillo_aromatico = 5
 
-    Distances_Hidrogen_Bonds,Distances_Aromatic,Distancia_Hidrofobica,Aceptores_Prot,Dadores_Prot,Aceptot_antecedent,Special_case = carga_variables()
+    ligand_plot,vmd_output,Distances_Hidrogen_Bonds,Distances_Aromatic,Distancia_Hidrofobica,Aceptores_Prot,Dadores_Prot,Aceptot_antecedent,Special_case = carga_variables()
     Caso = ['acceptors','donors']
 
     ## Crear Carpetas ##
