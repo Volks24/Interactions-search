@@ -595,6 +595,7 @@ if __name__ == '__main__':
     # Obtener coordenadas desde el archivo PDB
     # Y CM del ligado para establecer SA
     pdb_coords , CM = extract_coords_from_pdb(Ligand_imput)
+
     ###### Busqueda Aromaticos ##### 
     
 
@@ -622,6 +623,7 @@ if __name__ == '__main__':
 
     DF_Lig = pd.DataFrame(coordenadas,columns=['Átomo', 'Coord X', 'Coord Y', 'Coord Z', 'Caso'])
     
+    print(DF_Lig)
     
     DF_Lig = pd.concat([DF_Lig, DF_Aro], ignore_index=True)
 
@@ -837,6 +839,17 @@ if __name__ == '__main__':
     else:
         # Appendear los datos al archivo existente sin el encabezado
          subset_df.to_csv(out_put_file,  mode='a', header=False, index=False)
+
+    ## Center of Mass##
+    out_put_file = 'CM_all.csv'
+    new_row = {'Receptor': receptor, 'Ligand': ligand, 'CM X': CM[0], 'CM Y': CM[1], 'CM Z': CM[2]}  # Asegúrate de usar CM[2] para 'CM Z'
+    CM_DF = pd.DataFrame([new_row] , columns=['Receptor', 'Ligand', 'CM X', 'CM Y', 'CM Z'])
+    if not os.path.isfile(out_put_file):
+        # Escribir el DataFrame con encabezado si el archivo no existe
+         CM_DF.to_csv(out_put_file, mode='w', header=True, index=False)
+    else:
+        # Appendear los datos al archivo existente sin el encabezado
+         CM_DF.to_csv(out_put_file,  mode='a', header=False, index=False)
 
     
     
