@@ -623,8 +623,7 @@ if __name__ == '__main__':
 
     DF_Lig = pd.DataFrame(coordenadas,columns=['Átomo', 'Coord X', 'Coord Y', 'Coord Z', 'Caso'])
     
-    print(DF_Lig)
-    
+   
     DF_Lig = pd.concat([DF_Lig, DF_Aro], ignore_index=True)
 
     ### Fin Ligando ####
