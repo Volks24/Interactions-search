@@ -55,7 +55,7 @@ def search_hot_points(Ligand_imput):
 
     # Definir los patrones SMARTS para cada caso
     acceptor_smarts = ['[O;H1]', '[O;H0]', '[N;H1]', '[N;H0]' , '[n]' , '[o]' , '[N+]']  # Aceptores
-    donor_smarts = ['[O;H]', '[N;H]', '[S;H]' ,'[nH]']  # Donadores
+    donor_smarts = ['[O;H]', '[N;H2]','[N;H]', '[S;H]' ,'[nH]']  # Donadores
     aromatic_smarts = 'a'  # Aromáticos
 
     # Diccionarios para almacenar las coordenadas
@@ -641,7 +641,15 @@ if __name__ == '__main__':
     
     receptor_points = Coordenadas_interes_receptor(Aceptores_Prot,Dadores_Prot,DF_Active_Site)
 
-    DF_Interacciones = pd.DataFrame( columns=['Pos R','Res','Atom' ,'Dist','Lig','Type', 'Angle' , 'Interaction'])
+    DF_Interacciones = pd.DataFrame({
+    'Pos R': pd.Series(dtype='int'),
+    'Res': pd.Series(dtype='object'),
+    'Atom': pd.Series(dtype='object'),
+    'Dist': pd.Series(dtype='float64'),  # Dist como float
+    'Lig': pd.Series(dtype='object'),
+    'Type': pd.Series(dtype='object'),
+    'Angle': pd.Series(dtype='float64'),  # Angle como float
+    'Interaction': pd.Series(dtype='object')})
 
     ### Caso Ligando Aceptor - Receptor Dador
     
@@ -707,7 +715,7 @@ if __name__ == '__main__':
             # Filtrar el DataFrame
             resultado = DF_Active_Site[(DF_Active_Site['Pos'] == DF_Interacciones.iloc[j,0]) & (DF_Active_Site['Atom'] == DF_Interacciones.iloc[j,2])]
             Donor = (np.array(resultado[['X' , 'Y' , 'Z']])).reshape(-1)
-            DF_Interacciones.iloc[j,6] = angle_three_points(Donor,Aceptor,Aceptor_Antecedent)
+            DF_Interacciones.iloc[j,6] = float(angle_three_points(Donor,Aceptor,Aceptor_Antecedent))
         if DF_Interacciones.iloc[j,5] == 'donnor':
             # Ligando
             Donor =  DF_Lig[DF_Lig.iloc[:,0] == DF_Interacciones.iloc[j,4]] 
@@ -724,7 +732,7 @@ if __name__ == '__main__':
             except KeyError:
                 resultado = DF_Active_Site[(DF_Active_Site['Pos'] == DF_Interacciones.iloc[j,0]) & (DF_Active_Site['Atom'] == 'C')]
                 Aceptor_Antecedent = (np.array(resultado[['X' , 'Y' , 'Z']])).reshape(-1)
-            DF_Interacciones.iloc[j,6] = angle_three_points(Donor,Aceptor,Aceptor_Antecedent)
+            DF_Interacciones.iloc[j,6] = float(angle_three_points(Donor,Aceptor,Aceptor_Antecedent))
         if DF_Interacciones.iloc[j,5] == 'aromatic':
             Anillo_Proteina = DF_Active_Site[(DF_Active_Site['Pos'] == DF_Interacciones.iloc[j,0])]
             Anillo_Lig = DF_Lig[(DF_Lig['Caso'] == DF_Interacciones.iloc[j,4])]
@@ -849,6 +857,7 @@ if __name__ == '__main__':
     else:
         # Appendear los datos al archivo existente sin el encabezado
          CM_DF.to_csv(out_put_file,  mode='a', header=False, index=False)
+
 
     
     
