@@ -6,6 +6,7 @@ distancias:
   Distances_Hidrogen_Bonds: 3.2
   Distances_Aromatic: 5.5
   Distances_Hidrofobica: 6
+  Distances_Salt_Bridge: 4.0
   centroid_distance: 9
   Distances_C_Simple : 1.54
   Distances_C_Doble : 2.56
@@ -85,4 +86,14 @@ hidrofobicos:
   TYR: [CB, CG, CD1, CD2, CE1, CE2]
   HIS: [CB, CG, CD2, CE1]
   CYS: [CB]
+
+salt_bridge_positive:
+  ARG: [NE, NH1, NH2]
+  LYS: [NZ]
+  HIS: [NE2]
+  HIP: [NE2, ND1]
+
+salt_bridge_negative:
+  ASP: [OD1, OD2]
+  GLU: [OE1, OE2]
 

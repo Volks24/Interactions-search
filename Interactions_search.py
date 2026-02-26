@@ -132,6 +132,62 @@ def search_hydrophobic_ligand(Ligand_imput):
     return hydrophobic_atoms
 
 
+def search_salt_bridge_ligand(Ligand_imput):
+    # Patrones SMARTS para átomos de salt bridge del ligando:
+    # Positivos (interaccionan con ASP/GLU del receptor):
+    #   - N cargado positivamente (amonio, guanidinio protonado)
+    #   - N de guanidinio/amidina en forma neutra
+    # Negativos (interaccionan con ARG/LYS/HIS del receptor):
+    #   - O cargado negativamente
+    #   - O terminal de carboxilato (resonancia)
+    #   - O terminal de fosfato o sulfonato
+    sb_pos_smarts = [
+        '[N+;H0,H1,H2,H3]',
+        '[N;H2;$(NC(=N)N)]',
+        '[N;H1;$(NC(=N)N)]',
+    ]
+    sb_neg_smarts = [
+        '[O-]',
+        '[OX1;$(O~C~[OX1])]',
+        '[OX1;$(O~P~[OX1])]',
+        '[OX1;$(O~S~[OX1])]',
+    ]
+
+    sb_pos_atoms = []
+    seen_pos = set()
+    for smarts in sb_pos_smarts:
+        pattern = Chem.MolFromSmarts(smarts)
+        if pattern is None:
+            continue
+        for match in mol.GetSubstructMatches(pattern):
+            for atom_idx in match:
+                if atom_idx not in seen_pos:
+                    seen_pos.add(atom_idx)
+                    sb_pos_atoms.append(atom_idx)
+
+    sb_neg_atoms = []
+    seen_neg = set()
+    for smarts in sb_neg_smarts:
+        pattern = Chem.MolFromSmarts(smarts)
+        if pattern is None:
+            continue
+        for match in mol.GetSubstructMatches(pattern):
+            for atom_idx in match:
+                if atom_idx not in seen_neg:
+                    seen_neg.add(atom_idx)
+                    sb_neg_atoms.append(atom_idx)
+
+    if ligand_plot == 'Yes':
+        mol_copy = Chem.Mol(mol)
+        rdDepictor.Compute2DCoords(mol_copy)
+        all_sb = list(set(sb_pos_atoms + sb_neg_atoms))
+        if all_sb:
+            img = Draw.MolToImage(mol_copy, highlightAtoms=all_sb, size=(600, 600))
+            img.save(f"{folder}/{Ligand_imput.split('.')[0]}_salt_bridge.png")
+
+    return sb_pos_atoms, sb_neg_atoms
+
+
 def active_site_residues(structure, Ligando_Centro,cadena, centroid_distance , lig):
     model = structure[0][cadena]
 
@@ -210,17 +266,20 @@ def carga_variables():
     Distances_Hidrogen_Bonds =float(Interaciones['distancias']['Distances_Hidrogen_Bonds'])
     Distances_Aromatic = float(Interaciones['distancias']['Distances_Aromatic'])
     Distancia_Hidrofobica = float(Interaciones['distancias']['Distances_Hidrofobica'])
+    Distances_Salt_Bridge = float(Interaciones['distancias']['Distances_Salt_Bridge'])
     
     Aceptores_Prot = Interaciones['acceptors']
     Dadores_Prot = Interaciones['donors']
     Aceptot_antecedent = Interaciones['acceptors_antecedent']
     Special_case = Interaciones['special']
     Hidrofobicos_Prot = Interaciones['hidrofobicos']
-    return(ligand_plot,vmd_output,Distances_Hidrogen_Bonds,Distances_Aromatic,Distancia_Hidrofobica,Aceptores_Prot,Dadores_Prot,Aceptot_antecedent,Special_case,Hidrofobicos_Prot)
+    SB_Pos_Prot = Interaciones['salt_bridge_positive']
+    SB_Neg_Prot = Interaciones['salt_bridge_negative']
+    return(ligand_plot,vmd_output,Distances_Hidrogen_Bonds,Distances_Aromatic,Distancia_Hidrofobica,Distances_Salt_Bridge,Aceptores_Prot,Dadores_Prot,Aceptot_antecedent,Special_case,Hidrofobicos_Prot,SB_Pos_Prot,SB_Neg_Prot)
 
 
 
-def Coordenadas_interes_receptor(Aceptores_Prot,Dadores_Prot,Hidrofobicos_Prot,DF_Active_Site):
+def Coordenadas_interes_receptor(Aceptores_Prot,Dadores_Prot,Hidrofobicos_Prot,SB_Pos_Prot,SB_Neg_Prot,DF_Active_Site):
     ### Obtengo las coordenadas de los atomos de interes en el receptor
     receptor_points = pd.DataFrame(columns=['Type','Pos','Residue', 'Atom', 'X' , 'Y' , 'Z'])
     for pos in range(0,DF_Active_Site.shape[0]):
@@ -241,6 +300,18 @@ def Coordenadas_interes_receptor(Aceptores_Prot,Dadores_Prot,Hidrofobicos_Prot,D
         listado = Hidrofobicos_Prot.get(Atomo, [])
         if Res in listado:
             receptor_points.loc[len(receptor_points.index)] = 'hidrofobico',DF_Active_Site.iloc[pos,1],DF_Active_Site.iloc[pos,2],DF_Active_Site.iloc[pos,3],DF_Active_Site.iloc[pos,4],DF_Active_Site.iloc[pos,5],DF_Active_Site.iloc[pos,6]
+    for pos in range(0,DF_Active_Site.shape[0]):
+        Atomo = (DF_Active_Site.iloc[pos,2])
+        Res = (DF_Active_Site.iloc[pos,3])
+        listado = SB_Pos_Prot.get(Atomo, [])
+        if Res in listado:
+            receptor_points.loc[len(receptor_points.index)] = 'sb_pos',DF_Active_Site.iloc[pos,1],DF_Active_Site.iloc[pos,2],DF_Active_Site.iloc[pos,3],DF_Active_Site.iloc[pos,4],DF_Active_Site.iloc[pos,5],DF_Active_Site.iloc[pos,6]
+    for pos in range(0,DF_Active_Site.shape[0]):
+        Atomo = (DF_Active_Site.iloc[pos,2])
+        Res = (DF_Active_Site.iloc[pos,3])
+        listado = SB_Neg_Prot.get(Atomo, [])
+        if Res in listado:
+            receptor_points.loc[len(receptor_points.index)] = 'sb_neg',DF_Active_Site.iloc[pos,1],DF_Active_Site.iloc[pos,2],DF_Active_Site.iloc[pos,3],DF_Active_Site.iloc[pos,4],DF_Active_Site.iloc[pos,5],DF_Active_Site.iloc[pos,6]
     aa_aro = ['TYR' , 'PHE' , 'TRP']
     for pos in range(0,DF_Active_Site.shape[0]):
         Atomo = (DF_Active_Site.iloc[pos,2])
@@ -583,12 +654,36 @@ def scripting_vmd(DF_Interacciones,receptor_points,aromatic_lig_df,DF_Lig,Prot,c
             VDM_TCL.write('set zm [expr {($z1 + $z2) / 2}]\n')
             VDM_TCL.write('graphics top color green\n')
             VDM_TCL.write('graphics top text [list $xm $ym $zm] [format "%.2f A" $distance]\n')
+        if DF_Interacciones.iloc[j,5] in ('sb_pos', 'sb_neg'):
+            Recept = DF_Interacciones.iloc[j,0]
+            atom_rec = DF_Interacciones.iloc[j,2]
+            Coord2 = np.array(receptor_points[(receptor_points['Pos'] == Recept) & (receptor_points['Atom'] == atom_rec)][['X','Y','Z']])[0]
+            atomo = DF_Interacciones.iloc[j,4]
+            lig_caso = DF_Interacciones.iloc[j,5]
+            Coord1 = np.array(DF_Lig[(DF_Lig['Átomo'] == atomo) & (DF_Lig['Caso'] == lig_caso)][['Coord X','Coord Y','Coord Z']])[0]
+            VDM_TCL.write('graphics top color magenta\n')
+            VDM_TCL.write('graphics top line {'+str(Coord1[0])+' '+str(Coord1[1])+' '+str(Coord1[2])+'} {'+str(Coord2[0])+' '+str(Coord2[1])+' '+str(Coord2[2])+'} width 4 style dashed\n')
+            VDM_TCL.write('set x1 {'+str(Coord1[0])+'}\n')
+            VDM_TCL.write('set y1 {'+str(Coord1[1])+'}\n')
+            VDM_TCL.write('set z1 {'+str(Coord1[2])+'}\n')
+            VDM_TCL.write('set x2 {'+str(Coord2[0])+'}\n')
+            VDM_TCL.write('set y2 {'+str(Coord2[1])+'}\n')
+            VDM_TCL.write('set z2 {'+str(Coord2[2])+'}\n')
+            VDM_TCL.write('set dx [expr {$x1 - $x2}]\n')
+            VDM_TCL.write('set dy [expr {$y1 - $y2}]\n')
+            VDM_TCL.write('set dz [expr {$z1 - $z2}]\n')
+            VDM_TCL.write('set distance [expr {sqrt($dx*$dx + $dy*$dy + $dz*$dz)}]\n')
+            VDM_TCL.write('set xm [expr {($x1 + $x2) / 2}]\n')
+            VDM_TCL.write('set ym [expr {($y1 + $y2) / 2}]\n')
+            VDM_TCL.write('set zm [expr {($z1 + $z2) / 2}]\n')
+            VDM_TCL.write('graphics top color magenta\n')
+            VDM_TCL.write('graphics top text [list $xm $ym $zm] [format "%.2f A" $distance]\n')
     VDM_TCL.close()
 
 
 def remove_bias(file_path):
     old_file_path = file_path.replace('.pdb', '_old.pdb')
-    shutil.copy(file_path, folder+'/'+old_file_path)
+    shutil.copy(file_path, folder+'/'+os.path.basename(old_file_path))
 
     with open(file_path, 'r') as f:
         lines = f.readlines()
@@ -628,7 +723,7 @@ if __name__ == '__main__':
     threshold_PH = 4
     numero_anillo_aromatico = 5
 
-    ligand_plot,vmd_output,Distances_Hidrogen_Bonds,Distances_Aromatic,Distancia_Hidrofobica,Aceptores_Prot,Dadores_Prot,Aceptot_antecedent,Special_case,Hidrofobicos_Prot = carga_variables()
+    ligand_plot,vmd_output,Distances_Hidrogen_Bonds,Distances_Aromatic,Distancia_Hidrofobica,Distances_Salt_Bridge,Aceptores_Prot,Dadores_Prot,Aceptot_antecedent,Special_case,Hidrofobicos_Prot,SB_Pos_Prot,SB_Neg_Prot = carga_variables()
     Caso = ['acceptors','donors']
 
     ## Crear Carpetas ##
@@ -689,6 +784,19 @@ if __name__ == '__main__':
             temp = Coord.split(':')
             coordenadas.append([temp[0],float(temp[1]),float(temp[2]),float(temp[3]),'hidrofobico'])
 
+    ###### Busqueda Salt Bridges Ligando #####
+    sb_pos_atoms, sb_neg_atoms = search_salt_bridge_ligand(Ligand_imput)
+    for j in range(0, len(sb_pos_atoms)):
+        Coord = get_coord_by_atom_id(pdb_coords[sb_pos_atoms[j]][1])
+        if Coord is not None:
+            temp = Coord.split(':')
+            coordenadas.append([temp[0],float(temp[1]),float(temp[2]),float(temp[3]),'sb_pos'])
+    for j in range(0, len(sb_neg_atoms)):
+        Coord = get_coord_by_atom_id(pdb_coords[sb_neg_atoms[j]][1])
+        if Coord is not None:
+            temp = Coord.split(':')
+            coordenadas.append([temp[0],float(temp[1]),float(temp[2]),float(temp[3]),'sb_neg'])
+
     DF_Lig = pd.DataFrame(coordenadas,columns=['Átomo', 'Coord X', 'Coord Y', 'Coord Z', 'Caso'])
     
    
@@ -707,7 +815,7 @@ if __name__ == '__main__':
 
     #### Interacciones #####
     
-    receptor_points = Coordenadas_interes_receptor(Aceptores_Prot,Dadores_Prot,Hidrofobicos_Prot,DF_Active_Site)
+    receptor_points = Coordenadas_interes_receptor(Aceptores_Prot,Dadores_Prot,Hidrofobicos_Prot,SB_Pos_Prot,SB_Neg_Prot,DF_Active_Site)
 
     DF_Interacciones = pd.DataFrame({
     'Pos R': pd.Series(dtype='int'),
@@ -772,6 +880,11 @@ if __name__ == '__main__':
     Receptor_Caso = 'hidrofobico'
     Lig_Caso = 'hidrofobico'
     DF_Interacciones = residuos_contacto(Receptor_Caso, Lig_Caso, receptor_points, DF_Lig, DF_Interacciones, Distancia_Hidrofobica)
+
+    ## Salt Bridges: receptor positivo (ARG/LYS/HIS) ↔ ligando negativo ##
+    DF_Interacciones = residuos_contacto('sb_pos', 'sb_neg', receptor_points, DF_Lig, DF_Interacciones, Distances_Salt_Bridge)
+    ## Salt Bridges: receptor negativo (ASP/GLU) ↔ ligando positivo ##
+    DF_Interacciones = residuos_contacto('sb_neg', 'sb_pos', receptor_points, DF_Lig, DF_Interacciones, Distances_Salt_Bridge)
 
     DF_Lig_All = generate_df_ligand(pdb_coords)
 
@@ -844,12 +957,17 @@ if __name__ == '__main__':
                 DF_Interacciones.iloc[k,7] = 'Yes'
             else:
                 DF_Interacciones.iloc[k,7] = 'No'
+        if DF_Interacciones.iloc[k,5] in ('sb_pos', 'sb_neg'):
+            if float(DF_Interacciones.iloc[k,3]) < Distances_Salt_Bridge:
+                DF_Interacciones.iloc[k,7] = 'Yes'
+            else:
+                DF_Interacciones.iloc[k,7] = 'No'
 
     DF_Interacciones = DF_Interacciones.drop_duplicates()
     
 
     ## Calculos Final ##
-    dat_final = pd.DataFrame(columns=['Receptor','Ligand','Total','Distance','Ac','Do','Ar','Hi','#Inter','acceptor','donnor','aromatic','hidrofobico'])
+    dat_final = pd.DataFrame(columns=['Receptor','Ligand','Total','Distance','Ac','Do','Ar','Hi','SB','#Inter','acceptor','donnor','aromatic','hidrofobico','sal'])
     dat_list = []
     receptor = receptor_pdb.split('.')[0]
     ligand = Ligand_imput.split('.')[0]
@@ -867,6 +985,7 @@ if __name__ == '__main__':
     dat_list.append(Valores.get('donnor', 0))
     dat_list.append(Valores.get('aromatic', 0))
     dat_list.append(Valores.get('hidrofobico', 0))
+    dat_list.append(Valores.get('sb_pos', 0) + Valores.get('sb_neg', 0))
     ## Filtro True##
     if not DF_Interacciones.empty:
         DF_Interacciones = DF_Interacciones[DF_Interacciones['Interaction'].isin(['Yes', 'face-to-face', 'T-shaped'])]
@@ -879,6 +998,7 @@ if __name__ == '__main__':
     dat_list.append(Valores.get('donnor', 0))
     dat_list.append(Valores.get('aromatic', 0))
     dat_list.append(Valores.get('hidrofobico', 0))
+    dat_list.append(Valores.get('sb_pos', 0) + Valores.get('sb_neg', 0))
     
     ## VMD_Ploting ##
 
@@ -901,7 +1021,7 @@ if __name__ == '__main__':
 
     ## Resumen data ##
     out_put_file = 'Interactions_all_count.csv'
-    subset_df = dat_final[['Receptor','Ligand','Total','#Inter','acceptor','donnor','aromatic','hidrofobico']]
+    subset_df = dat_final[['Receptor','Ligand','Total','#Inter','acceptor','donnor','aromatic','hidrofobico','sal']]
     if not os.path.isfile(out_put_file):
         # Escribir el DataFrame con encabezado si el archivo no existe
          subset_df.to_csv(out_put_file, mode='w', header=True, index=False)
