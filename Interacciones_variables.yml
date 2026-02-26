@@ -73,3 +73,16 @@ donors:
 special:
   HEM: [FE , 1.59] # Fe central grupo hemo
 
+hidrofobicos:
+  ALA: [CB]
+  VAL: [CB, CG1, CG2]
+  LEU: [CB, CG, CD1, CD2]
+  ILE: [CB, CG1, CG2, CD1]
+  MET: [CB, CG, CE]
+  PRO: [CB, CG, CD]
+  PHE: [CB, CG, CD1, CD2, CE1, CE2, CZ]
+  TRP: [CB, CG, CD1, CD2, CE2, CE3, CZ2, CZ3, CH2]
+  TYR: [CB, CG, CD1, CD2, CE1, CE2]
+  HIS: [CB, CG, CD2, CE1]
+  CYS: [CB]
+

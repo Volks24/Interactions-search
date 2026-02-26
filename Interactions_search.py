@@ -101,6 +101,37 @@ def search_hot_points(Ligand_imput):
     return(acceptor_atoms,donor_atoms)
 
 
+def search_hydrophobic_ligand(Ligand_imput):
+    # Patrones SMARTS para átomos hidrofóbicos del ligando:
+    # - Carbono aromático no vecino de heteroátomo polar
+    # - Carbono sp3/sp2 no vecino de N, O, halogens ni carbonilo
+    # - Azufre en tioéter (C-S-C)
+    hydrophobic_smarts = [
+        '[c;!$(c~[#7,#8,F,Cl,Br,I])]',
+        '[C;!$(C~[#7,#8,F,Cl,Br,I]);!$(C=O);!$(C=S)]',
+        '[S;X2;H0;$(S(-[#6])-[#6])]',
+    ]
+
+    hydrophobic_atoms = []
+    seen = set()
+    for smarts in hydrophobic_smarts:
+        pattern = Chem.MolFromSmarts(smarts)
+        matches = mol.GetSubstructMatches(pattern)
+        for match in matches:
+            for atom_idx in match:
+                if atom_idx not in seen:
+                    seen.add(atom_idx)
+                    hydrophobic_atoms.append(atom_idx)
+
+    if ligand_plot == 'Yes':
+        mol_copy = Chem.Mol(mol)
+        rdDepictor.Compute2DCoords(mol_copy)
+        img = Draw.MolToImage(mol_copy, highlightAtoms=hydrophobic_atoms, size=(600, 600))
+        img.save(f"{folder}/{Ligand_imput.split('.')[0]}_hydrophobic.png")
+
+    return hydrophobic_atoms
+
+
 def active_site_residues(structure, Ligando_Centro,cadena, centroid_distance , lig):
     model = structure[0][cadena]
 
@@ -184,11 +215,12 @@ def carga_variables():
     Dadores_Prot = Interaciones['donors']
     Aceptot_antecedent = Interaciones['acceptors_antecedent']
     Special_case = Interaciones['special']
-    return(ligand_plot,vmd_output,Distances_Hidrogen_Bonds,Distances_Aromatic,Distancia_Hidrofobica,Aceptores_Prot,Dadores_Prot,Aceptot_antecedent,Special_case)
+    Hidrofobicos_Prot = Interaciones['hidrofobicos']
+    return(ligand_plot,vmd_output,Distances_Hidrogen_Bonds,Distances_Aromatic,Distancia_Hidrofobica,Aceptores_Prot,Dadores_Prot,Aceptot_antecedent,Special_case,Hidrofobicos_Prot)
 
 
 
-def Coordenadas_interes_receptor(Aceptores_Prot,Dadores_Prot,DF_Active_Site):
+def Coordenadas_interes_receptor(Aceptores_Prot,Dadores_Prot,Hidrofobicos_Prot,DF_Active_Site):
     ### Obtengo las coordenadas de los atomos de interes en el receptor
     receptor_points = pd.DataFrame(columns=['Type','Pos','Residue', 'Atom', 'X' , 'Y' , 'Z'])
     for pos in range(0,DF_Active_Site.shape[0]):
@@ -203,6 +235,12 @@ def Coordenadas_interes_receptor(Aceptores_Prot,Dadores_Prot,DF_Active_Site):
         listado = Dadores_Prot.get(Atomo, [])
         if Res in listado:
             receptor_points.loc[len(receptor_points.index)] = 'Dador',DF_Active_Site.iloc[pos,1],DF_Active_Site.iloc[pos,2],DF_Active_Site.iloc[pos,3],DF_Active_Site.iloc[pos,4],DF_Active_Site.iloc[pos,5],DF_Active_Site.iloc[pos,6]
+    for pos in range(0,DF_Active_Site.shape[0]):
+        Atomo = (DF_Active_Site.iloc[pos,2])
+        Res = (DF_Active_Site.iloc[pos,3])
+        listado = Hidrofobicos_Prot.get(Atomo, [])
+        if Res in listado:
+            receptor_points.loc[len(receptor_points.index)] = 'hidrofobico',DF_Active_Site.iloc[pos,1],DF_Active_Site.iloc[pos,2],DF_Active_Site.iloc[pos,3],DF_Active_Site.iloc[pos,4],DF_Active_Site.iloc[pos,5],DF_Active_Site.iloc[pos,6]
     aa_aro = ['TYR' , 'PHE' , 'TRP']
     for pos in range(0,DF_Active_Site.shape[0]):
         Atomo = (DF_Active_Site.iloc[pos,2])
@@ -522,6 +560,29 @@ def scripting_vmd(DF_Interacciones,receptor_points,aromatic_lig_df,DF_Lig,Prot,c
             VDM_TCL.write('set zm [expr {($z1 + $z2) / 2}]\n')
             VDM_TCL.write('graphics top color white\n')
             VDM_TCL.write('graphics top text [list $xm $ym $zm] [format "%.2f A" $distance]\n')
+        if DF_Interacciones.iloc[j,5] == 'hidrofobico':
+            Recept = DF_Interacciones.iloc[j,0]
+            atom_rec = DF_Interacciones.iloc[j,2]
+            Coord2 = np.array(receptor_points[(receptor_points['Pos'] == Recept) & (receptor_points['Atom'] == atom_rec)][['X','Y','Z']])[0]
+            atomo = DF_Interacciones.iloc[j,4]
+            Coord1 = np.array(DF_Lig[(DF_Lig['Átomo'] == atomo) & (DF_Lig['Caso'] == 'hidrofobico')][['Coord X','Coord Y','Coord Z']])[0]
+            VDM_TCL.write('graphics top color green\n')
+            VDM_TCL.write('graphics top line {'+str(Coord1[0])+' '+str(Coord1[1])+' '+str(Coord1[2])+'} {'+str(Coord2[0])+' '+str(Coord2[1])+' '+str(Coord2[2])+'} width 3 style dashed\n')
+            VDM_TCL.write('set x1 {'+str(Coord1[0])+'}\n')
+            VDM_TCL.write('set y1 {'+str(Coord1[1])+'}\n')
+            VDM_TCL.write('set z1 {'+str(Coord1[2])+'}\n')
+            VDM_TCL.write('set x2 {'+str(Coord2[0])+'}\n')
+            VDM_TCL.write('set y2 {'+str(Coord2[1])+'}\n')
+            VDM_TCL.write('set z2 {'+str(Coord2[2])+'}\n')
+            VDM_TCL.write('set dx [expr {$x1 - $x2}]\n')
+            VDM_TCL.write('set dy [expr {$y1 - $y2}]\n')
+            VDM_TCL.write('set dz [expr {$z1 - $z2}]\n')
+            VDM_TCL.write('set distance [expr {sqrt($dx*$dx + $dy*$dy + $dz*$dz)}]\n')
+            VDM_TCL.write('set xm [expr {($x1 + $x2) / 2}]\n')
+            VDM_TCL.write('set ym [expr {($y1 + $y2) / 2}]\n')
+            VDM_TCL.write('set zm [expr {($z1 + $z2) / 2}]\n')
+            VDM_TCL.write('graphics top color green\n')
+            VDM_TCL.write('graphics top text [list $xm $ym $zm] [format "%.2f A" $distance]\n')
     VDM_TCL.close()
 
 
@@ -567,7 +628,7 @@ if __name__ == '__main__':
     threshold_PH = 4
     numero_anillo_aromatico = 5
 
-    ligand_plot,vmd_output,Distances_Hidrogen_Bonds,Distances_Aromatic,Distancia_Hidrofobica,Aceptores_Prot,Dadores_Prot,Aceptot_antecedent,Special_case = carga_variables()
+    ligand_plot,vmd_output,Distances_Hidrogen_Bonds,Distances_Aromatic,Distancia_Hidrofobica,Aceptores_Prot,Dadores_Prot,Aceptot_antecedent,Special_case,Hidrofobicos_Prot = carga_variables()
     Caso = ['acceptors','donors']
 
     ## Crear Carpetas ##
@@ -620,6 +681,14 @@ if __name__ == '__main__':
         temp = Coord.split(':')
         coordenadas.append([temp[0],float(temp[1]),float(temp[2]),float(temp[3]),'donnor'])
 
+    ###### Busqueda Hidrofobicos Ligando #####
+    hydrophobic_atoms = search_hydrophobic_ligand(Ligand_imput)
+    for j in range(0, len(hydrophobic_atoms)):
+        Coord = get_coord_by_atom_id(pdb_coords[hydrophobic_atoms[j]][1])
+        if Coord is not None:
+            temp = Coord.split(':')
+            coordenadas.append([temp[0],float(temp[1]),float(temp[2]),float(temp[3]),'hidrofobico'])
+
     DF_Lig = pd.DataFrame(coordenadas,columns=['Átomo', 'Coord X', 'Coord Y', 'Coord Z', 'Caso'])
     
    
@@ -638,7 +707,7 @@ if __name__ == '__main__':
 
     #### Interacciones #####
     
-    receptor_points = Coordenadas_interes_receptor(Aceptores_Prot,Dadores_Prot,DF_Active_Site)
+    receptor_points = Coordenadas_interes_receptor(Aceptores_Prot,Dadores_Prot,Hidrofobicos_Prot,DF_Active_Site)
 
     DF_Interacciones = pd.DataFrame({
     'Pos R': pd.Series(dtype='int'),
@@ -699,6 +768,11 @@ if __name__ == '__main__':
                 0, 0                    # Valores adicionales
             ]
 
+    ## Hidrofobicas ##
+    Receptor_Caso = 'hidrofobico'
+    Lig_Caso = 'hidrofobico'
+    DF_Interacciones = residuos_contacto(Receptor_Caso, Lig_Caso, receptor_points, DF_Lig, DF_Interacciones, Distancia_Hidrofobica)
+
     DF_Lig_All = generate_df_ligand(pdb_coords)
 
     DF_Interacciones = DF_Interacciones.drop_duplicates()
@@ -735,6 +809,7 @@ if __name__ == '__main__':
             Anillo_Proteina = DF_Active_Site[(DF_Active_Site['Pos'] == DF_Interacciones.iloc[j,0])]
             Anillo_Lig = DF_Lig[(DF_Lig['Caso'] == DF_Interacciones.iloc[j,4])]
             DF_Interacciones.iloc[j,6] = Interaccion_Aromatica(Anillo_Proteina,Anillo_Lig)
+        # hidrofobico: no requiere cálculo de ángulo
     
     
     for k in range(0,DF_Interacciones.shape[0]):
@@ -764,12 +839,17 @@ if __name__ == '__main__':
                     DF_Interacciones.iloc[k,7] = 'No'
             else:
                 DF_Interacciones.iloc[k,7] = 'No'
+        if DF_Interacciones.iloc[k,5] == 'hidrofobico':
+            if float(DF_Interacciones.iloc[k,3]) < Distancia_Hidrofobica:
+                DF_Interacciones.iloc[k,7] = 'Yes'
+            else:
+                DF_Interacciones.iloc[k,7] = 'No'
 
     DF_Interacciones = DF_Interacciones.drop_duplicates()
     
 
     ## Calculos Final ##
-    dat_final = pd.DataFrame(columns=['Receptor' , 'Ligand' , 'Total' , 'Distance','Ac' ,'Do', 'Ar' , '#Inter','acceptor' ,'donnor', 'aromatic'])
+    dat_final = pd.DataFrame(columns=['Receptor','Ligand','Total','Distance','Ac','Do','Ar','Hi','#Inter','acceptor','donnor','aromatic','hidrofobico'])
     dat_list = []
     receptor = receptor_pdb.split('.')[0]
     ligand = Ligand_imput.split('.')[0]
@@ -782,19 +862,11 @@ if __name__ == '__main__':
     DF_Interacciones.to_csv(f'{folder}/Interaction_{receptor}_{ligand}_threshold.csv')
 
     dat_list.append(DF_Interacciones.shape[0])
-    Valores = (dict(DF_Interacciones['Type'].value_counts()))
-    try:
-        dat_list.append(Valores['acceptor']) # PH
-    except KeyError:
-        dat_list.append(0) # PH
-    try:
-        dat_list.append(Valores['donnor']) # PH
-    except KeyError:
-        dat_list.append(0) # PH        
-    try:
-        dat_list.append(Valores['aromatic']) # PH
-    except KeyError:
-        dat_list.append(0) # PH        
+    Valores = dict(DF_Interacciones['Type'].value_counts())
+    dat_list.append(Valores.get('acceptor', 0))
+    dat_list.append(Valores.get('donnor', 0))
+    dat_list.append(Valores.get('aromatic', 0))
+    dat_list.append(Valores.get('hidrofobico', 0))
     ## Filtro True##
     if not DF_Interacciones.empty:
         DF_Interacciones = DF_Interacciones[DF_Interacciones['Interaction'].isin(['Yes', 'face-to-face', 'T-shaped'])]
@@ -802,19 +874,11 @@ if __name__ == '__main__':
         dat_list.append(DF_Interacciones.shape[0])
     else:
         dat_list.append(0)
-    Valores = (dict(DF_Interacciones['Type'].value_counts()))
-    try:
-        dat_list.append(Valores['acceptor']) # PH
-    except KeyError:
-        dat_list.append(0) # PH
-    try:
-        dat_list.append(Valores['donnor']) # PH
-    except KeyError:
-        dat_list.append(0) # PH        
-    try:
-        dat_list.append(Valores['aromatic']) # PH
-    except KeyError:
-        dat_list.append(0) # PH        
+    Valores = dict(DF_Interacciones['Type'].value_counts())
+    dat_list.append(Valores.get('acceptor', 0))
+    dat_list.append(Valores.get('donnor', 0))
+    dat_list.append(Valores.get('aromatic', 0))
+    dat_list.append(Valores.get('hidrofobico', 0))
     
     ## VMD_Ploting ##
 
@@ -837,7 +901,7 @@ if __name__ == '__main__':
 
     ## Resumen data ##
     out_put_file = 'Interactions_all_count.csv'
-    subset_df = dat_final[['Receptor' , 'Ligand' , 'Total', '#Inter','acceptor' ,'donnor', 'aromatic']]
+    subset_df = dat_final[['Receptor','Ligand','Total','#Inter','acceptor','donnor','aromatic','hidrofobico']]
     if not os.path.isfile(out_put_file):
         # Escribir el DataFrame con encabezado si el archivo no existe
          subset_df.to_csv(out_put_file, mode='w', header=True, index=False)
