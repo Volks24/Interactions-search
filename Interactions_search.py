@@ -194,13 +194,13 @@ def Coordenadas_interes_receptor(Aceptores_Prot,Dadores_Prot,DF_Active_Site):
     for pos in range(0,DF_Active_Site.shape[0]):
         Atomo = (DF_Active_Site.iloc[pos,2])
         Res = (DF_Active_Site.iloc[pos,3])
-        listado = (Aceptores_Prot[Atomo])
+        listado = Aceptores_Prot.get(Atomo, [])
         if Res in listado:
             receptor_points.loc[len(receptor_points.index)] = 'Aceptor',DF_Active_Site.iloc[pos,1],DF_Active_Site.iloc[pos,2],DF_Active_Site.iloc[pos,3],DF_Active_Site.iloc[pos,4],DF_Active_Site.iloc[pos,5],DF_Active_Site.iloc[pos,6]
     for pos in range(0,DF_Active_Site.shape[0]):
         Atomo = (DF_Active_Site.iloc[pos,2])
         Res = (DF_Active_Site.iloc[pos,3])
-        listado = (Dadores_Prot[Atomo])
+        listado = Dadores_Prot.get(Atomo, [])
         if Res in listado:
             receptor_points.loc[len(receptor_points.index)] = 'Dador',DF_Active_Site.iloc[pos,1],DF_Active_Site.iloc[pos,2],DF_Active_Site.iloc[pos,3],DF_Active_Site.iloc[pos,4],DF_Active_Site.iloc[pos,5],DF_Active_Site.iloc[pos,6]
     aa_aro = ['TYR' , 'PHE' , 'TRP']
@@ -382,14 +382,14 @@ def aromatic_angle(anillo_ligand, anillo_recept):
     
     return angulo_deg
 
-def search_rings(mol):
+def search_rings(mol, min_ring_size=5):
     # Kekulizar la molécula para asegurar que los anillos se detecten correctamente
     Chem.Kekulize(mol, clearAromaticFlags=True)
-    
+
     # Obtener información de los anillos
     ring_info = mol.GetRingInfo()
     ring_atoms = ring_info.AtomRings()
-    
+
     # Listar los anillos encontrados
     ring_data = []
     for i, ring in enumerate(ring_atoms):
@@ -400,14 +400,13 @@ def search_rings(mol):
         })
 
     rings_data = []
-    # Imprimir información de los anillos
     for ring in ring_data:
-        #### Filtro por el numero de anillos que busco como aromatico
-        if ring['Ring Size'] > numero_anillo_aromatico:
+        # >= min_ring_size para incluir anillos de 5 miembros (imidazol, furano, tiofeno...)
+        if ring['Ring Size'] >= min_ring_size:
             for atom in ring['Atoms']:
                 rings_data.append([pdb_coords[atom][1] ,pdb_coords[atom][5] , pdb_coords[atom][6] ,pdb_coords[atom][7],'aromatic '+str(ring['Ring'])+' (#'+str(ring['Ring Size'])+')'])
 
-   
+
     return ring_data,rings_data
 
 def visualize_rings(mol, ring_data, Ligand_imput):
@@ -599,7 +598,7 @@ if __name__ == '__main__':
     ###### Busqueda Aromaticos ##### 
     
 
-    aromatic_rings_data , rings_data = search_rings(mol)
+    aromatic_rings_data , rings_data = search_rings(mol, numero_anillo_aromatico)
 
     if ligand_plot == 'Yes':
         visualize_rings(mol, aromatic_rings_data,Ligand_imput)
@@ -679,12 +678,11 @@ if __name__ == '__main__':
 
     for cas in Casos:
         Sub_Set_Ligando = aromatic_lig_df.query('Caso == @cas')
-        center_of_mass = np.mean(np.array(Sub_Set_Ligando.iloc[:,[1,2,3]]),axis=0)
+        center_aro_lig = np.mean(np.array(Sub_Set_Ligando.iloc[:,[1,2,3]]),axis=0)
         Matriz_receptor = (np.array(Sub_Set_Receptor.iloc[:,[4,5,6]]))
-        distances = np.linalg.norm(Matriz_receptor - center_of_mass, axis=1)
-        
-        # Filtrar las distancias que son menores a 4.5
-        within_distance_indices = np.where(distances < 15)[0]
+        distances = np.linalg.norm(Matriz_receptor - center_aro_lig, axis=1)
+
+        within_distance_indices = np.where(distances < threshold_inter_aro)[0]
         
         for idx in within_distance_indices:
             closest_data = Sub_Set_Receptor.iloc[idx]
@@ -742,7 +740,7 @@ if __name__ == '__main__':
     for k in range(0,DF_Interacciones.shape[0]):
         if DF_Interacciones.iloc[k,5] == 'acceptor':
             if (float(DF_Interacciones.iloc[k,3]) < Distances_Hidrogen_Bonds):
-                if (float(DF_Interacciones.iloc[k,6]) > 100) and ((float(DF_Interacciones.iloc[k,6]) < 200)): ### Angulos Aceptor
+                if (float(DF_Interacciones.iloc[k,6]) > 120) and (float(DF_Interacciones.iloc[k,6]) <= 180):  # D-H···A > 120°
                     DF_Interacciones.iloc[k,7] = 'Yes'
                 else:
                     DF_Interacciones.iloc[k,7] = 'No'
@@ -750,7 +748,7 @@ if __name__ == '__main__':
                 DF_Interacciones.iloc[k,7] = 'No'
         if DF_Interacciones.iloc[k,5] == 'donnor':
             if (float(DF_Interacciones.iloc[k,3]) < Distances_Hidrogen_Bonds):
-                if (float(DF_Interacciones.iloc[k,6]) > 100) and ((float(DF_Interacciones.iloc[k,6]) < 200)): ### Angulos Dador
+                if (float(DF_Interacciones.iloc[k,6]) > 120) and (float(DF_Interacciones.iloc[k,6]) <= 180):  # D-H···A > 120°
                     DF_Interacciones.iloc[k,7] = 'Yes'
                 else:
                     DF_Interacciones.iloc[k,7] = 'No'
@@ -758,12 +756,12 @@ if __name__ == '__main__':
                 DF_Interacciones.iloc[k,7] = 'No'
         if DF_Interacciones.iloc[k,5] == 'aromatic':
             if (float(DF_Interacciones.iloc[k,3]) < Distances_Aromatic):
-                if (float(DF_Interacciones.iloc[k,6]) > 0) and (float(DF_Interacciones.iloc[k,6]) < 30):
-                    DF_Interacciones.iloc[k,7] = 'Yes'
-                elif (float(DF_Interacciones.iloc[k,6]) > 85) and (float(DF_Interacciones.iloc[k,6]) < 95):
-                    DF_Interacciones.iloc[k,7] = 'Yes'
+                if (float(DF_Interacciones.iloc[k,6]) >= 0) and (float(DF_Interacciones.iloc[k,6]) < 30):
+                    DF_Interacciones.iloc[k,7] = 'face-to-face'
+                elif (float(DF_Interacciones.iloc[k,6]) >= 85) and (float(DF_Interacciones.iloc[k,6]) <= 95):
+                    DF_Interacciones.iloc[k,7] = 'T-shaped'
                 else:
-                    DF_Interacciones.iloc[k,7] = 'Yes' ### Hasta ver bien los angulos 
+                    DF_Interacciones.iloc[k,7] = 'No'
             else:
                 DF_Interacciones.iloc[k,7] = 'No'
 
@@ -799,7 +797,7 @@ if __name__ == '__main__':
         dat_list.append(0) # PH        
     ## Filtro True##
     if not DF_Interacciones.empty:
-        DF_Interacciones = DF_Interacciones[DF_Interacciones['Interaction'] == 'Yes']
+        DF_Interacciones = DF_Interacciones[DF_Interacciones['Interaction'].isin(['Yes', 'face-to-face', 'T-shaped'])]
         DF_Interacciones.to_csv(f'{folder}/Interaction_{receptor}_{ligand}_true.csv')
         dat_list.append(DF_Interacciones.shape[0])
     else:
