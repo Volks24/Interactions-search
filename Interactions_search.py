@@ -172,6 +172,8 @@ def carga_variables(config_path=None):
         cfg.options.ligand_plot,
         cfg.options.vmd_output,
         cfg.options.cumulative_output,
+        cfg.options.interaction_coord,
+        cfg.options.volume_plot,
         cfg.distancias.Distances_Hidrogen_Bonds,
         cfg.distancias.Distances_Aromatic,
         cfg.distancias.Distances_Hidrofobica,

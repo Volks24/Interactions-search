@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 
 __all__ = [
     "YesNo",
+    "InteractionCoordSource",
     "Options",
     "Distances",
     "Angles",
@@ -19,6 +20,7 @@ __all__ = [
 ]
 
 YesNo = Literal["Yes", "No"]  # flag: convert to bool in Phase 14
+InteractionCoordSource = Literal["receptor", "ligand", "center"]
 
 _DEFAULT_CONFIG_PATH = Path(__file__).parent.parent.parent / "Interacciones_variables.yml"
 
@@ -27,6 +29,11 @@ class Options(BaseModel):
     ligand_plot: YesNo = Field(default="Yes", description="Generate 2D ligand PNG plot")
     vmd_output: YesNo = Field(default="Yes", description="Generate VMD TCL visualization script")
     cumulative_output: YesNo = Field(default="Yes", description="Append results to cumulative CSV files")
+    interaction_coord: InteractionCoordSource = Field(
+        default="center",
+        description="Coordinate added to interaction CSVs: 'receptor', 'ligand', or 'center' (midpoint)",
+    )
+    volume_plot: YesNo = Field(default="Yes", description="Generate 3D convex-hull volume PNG for active site and pockets")
 
 
 class Distances(BaseModel):
