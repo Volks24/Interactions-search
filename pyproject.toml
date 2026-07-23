@@ -30,10 +30,9 @@ dev = [
 [project.scripts]
 interactions-search = "interactions_search:main"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-
 [tool.setuptools]
+packages = ["interactions_search"]
+package-dir = {"" = ".", "interactions_search" = "src/interactions_search"}
 py-modules = ["Interactions_search"]
 
 [tool.pytest.ini_options]
