@@ -302,7 +302,7 @@ def residuos_contacto(Receptor_Caso,Lig_Caso,receptor_points,DF_Lig,DF_Interacci
                 min_distance,           # Distancia
                 Sub_Set_Ligando.iloc[j, 0],  # Nombre del átomo del ligando (solo display)
                 Lig_Caso,               # Caso del ligando
-                0.0, 0,                 # Angle (placeholder, se completa después), Interaction
+                0.0, 'No',              # Angle (placeholder, se completa después), Interaction
                 Sub_Set_Ligando.iloc[j, 5],  # Atom ID (serial único, para joins internos)
             ]
     return(DF_Interacciones)
