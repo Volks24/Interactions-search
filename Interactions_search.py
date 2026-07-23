@@ -1,8 +1,9 @@
 ### Librerias ###
 
 import sys
-import yaml
+import yaml  # noqa: F401 — kept for backward compat; carga_variables now delegates to load_config
 from pathlib import Path
+from interactions_search.config import load_config
 from rdkit import Chem
 from rdkit.Chem import Draw
 from rdkit.Chem import rdDepictor
@@ -166,41 +167,31 @@ def center_of_mass(entity, geometric=False):
         return [sum(coord_list)/sum(masses) for coord_list in w_pos]
 
 
-def carga_variables():
-    # Cargo Variables Generales #
-    config_path = Path(__file__).parent / 'Interacciones_variables.yml'
-    with open(config_path) as file:
-        Interaciones = yaml.load(file, Loader=yaml.FullLoader)
-
-    ligand_plot = str(Interaciones['options']['ligand_plot'])
-    vmd_output = str(Interaciones['options']['vmd_output'])
-    cumulative_output = str(Interaciones['options']['cumulative_output'])
-    Interaction_Coord_Source = str(Interaciones['options'].get('interaction_coord', 'center'))
-    if Interaction_Coord_Source not in ('receptor', 'ligand', 'center'):
-        raise ValueError(
-            f"options.interaction_coord inválido: {Interaction_Coord_Source!r} "
-            "(usar 'receptor', 'ligand' o 'center')")
-    Volume_Plot = str(Interaciones['options'].get('volume_plot', 'Yes'))
-    Bias = str(Interaciones['options'].get('bias', 'No'))
-    Bias_Validated_Only = str(Interaciones['options'].get('bias_validated_only', 'No'))
-
-    Distances_Hidrogen_Bonds =float(Interaciones['distancias']['Distances_Hidrogen_Bonds'])
-    Distances_Aromatic = float(Interaciones['distancias']['Distances_Aromatic'])
-    Distancia_Hidrofobica = float(Interaciones['distancias']['Distances_Hidrofobica'])
-    Distancia_Centro_Activo = float(Interaciones['distancias']['centroid_distance'])
-    Angle_Hidrogen_Bonds_Min = float(Interaciones['angulos']['Angle_Hidrogen_Bonds_Min'])
-    Angle_Hidrogen_Bonds_Max = float(Interaciones['angulos']['Angle_Hidrogen_Bonds_Max'])
-    Ring_Planarity_RMSD_Max = float(Interaciones['aromaticidad']['Ring_Planarity_RMSD_Max'])
-
-    Pocket_Min_Residues = int(Interaciones['pockets']['min_residues'])
-    Pocket_Coverage_Threshold = float(Interaciones['pockets']['coverage_threshold'])
-    Pocket_Density_Radius = float(Interaciones['pockets'].get('density_radius', 5.0))
-
-    Aceptores_Prot = Interaciones['acceptors']
-    Dadores_Prot = Interaciones['donors']
-    Aceptot_antecedent = Interaciones['acceptors_antecedent']
-    Special_case = Interaciones['special']
-    return(ligand_plot,vmd_output,cumulative_output,Interaction_Coord_Source,Volume_Plot,Bias,Bias_Validated_Only,Distances_Hidrogen_Bonds,Distances_Aromatic,Distancia_Hidrofobica,Distancia_Centro_Activo,Angle_Hidrogen_Bonds_Min,Angle_Hidrogen_Bonds_Max,Ring_Planarity_RMSD_Max,Pocket_Min_Residues,Pocket_Coverage_Threshold,Pocket_Density_Radius,Aceptores_Prot,Dadores_Prot,Aceptot_antecedent,Special_case)
+def carga_variables(config_path=None):
+    cfg = load_config(config_path)
+    return (
+        cfg.options.ligand_plot,
+        cfg.options.vmd_output,
+        cfg.options.cumulative_output,
+        cfg.options.interaction_coord,
+        cfg.options.volume_plot,
+        cfg.options.bias,
+        cfg.options.bias_validated_only,
+        cfg.distancias.Distances_Hidrogen_Bonds,
+        cfg.distancias.Distances_Aromatic,
+        cfg.distancias.Distances_Hidrofobica,
+        cfg.distancias.centroid_distance,
+        cfg.angulos.Angle_Hidrogen_Bonds_Min,
+        cfg.angulos.Angle_Hidrogen_Bonds_Max,
+        cfg.aromaticidad.Ring_Planarity_RMSD_Max,
+        cfg.pockets.min_residues,
+        cfg.pockets.coverage_threshold,
+        cfg.pockets.density_radius,
+        cfg.acceptors,
+        cfg.donors,
+        cfg.acceptors_antecedent,
+        cfg.special,
+    )
 
 
 
@@ -317,7 +308,7 @@ def residuos_contacto(Receptor_Caso,Lig_Caso,receptor_points,DF_Lig,DF_Interacci
                 min_distance,           # Distancia
                 Sub_Set_Ligando.iloc[j, 0],  # Nombre del átomo del ligando (solo display)
                 Lig_Caso,               # Caso del ligando
-                0.0, 0,                 # Angle (placeholder, se completa después), Interaction
+                0.0, 'No',              # Angle (placeholder, se completa después), Interaction
                 Sub_Set_Ligando.iloc[j, 5],  # Atom ID (serial único, para joins internos)
             ]
     return(DF_Interacciones)
@@ -1754,6 +1745,9 @@ def main():
     parser.add_argument('-f', '--force_ligand', nargs='+', default=None,
                         help='Resname(s) a tratar como ligando aunque figuren como ATOM '
                              'en vez de HETATM en el PDB complejo (ej: -f TF3 7FW).')
+    parser.add_argument('--config', default=None, metavar='CONFIG.yml',
+                        help='Ruta al archivo YAML de configuración '
+                             '(por defecto: Interacciones_variables.yml en la raíz del proyecto).')
 
     args = parser.parse_args()
 
@@ -1798,7 +1792,7 @@ def main():
      Distancia_Hidrofobica, Distancia_Centro_Activo, Angle_Hidrogen_Bonds_Min,
      Angle_Hidrogen_Bonds_Max, Ring_Planarity_RMSD_Max, Pocket_Min_Residues,
      Pocket_Coverage_Threshold, Pocket_Density_Radius, Aceptores_Prot, Dadores_Prot,
-     Aceptot_antecedent, Special_case) = carga_variables()
+     Aceptot_antecedent, Special_case) = carga_variables(args.config)
 
     cfg = {
         'ligand_plot':              ligand_plot,
