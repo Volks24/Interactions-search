@@ -29,6 +29,7 @@ dev = [
 
 [project.scripts]
 interactions-search = "interactions_search:main"
+align-protein = "interactions_search.align:main"
 
 [tool.setuptools]
 packages = ["interactions_search"]
