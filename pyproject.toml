@@ -33,8 +33,7 @@ align-protein = "interactions_search.align:main"
 
 [tool.setuptools]
 packages = ["interactions_search"]
-package-dir = {"" = ".", "interactions_search" = "src/interactions_search"}
-py-modules = ["Interactions_search"]
+package-dir = {"interactions_search" = "src/interactions_search"}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

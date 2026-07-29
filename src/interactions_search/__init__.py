@@ -1,4 +1,5 @@
-from Interactions_search import main, analyze_pair, carga_variables
+from interactions_search.cli import main
+from interactions_search.pipeline import analyze_pair, carga_variables
 
 from .align import calcular_alineamiento_rmsd
 from .align import main as align_main

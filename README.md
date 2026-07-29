@@ -8,9 +8,31 @@ Detects and classifies non-covalent interactions between a ligand and a protein 
 
 | File | Description |
 |---|---|
-| `Interactions_search.py` | Main script |
+| `Interactions_search.py` | Compatibility shim at the repo root — `python Interactions_search.py ...` still works exactly as before. All logic lives in the `interactions_search` package (below); this file just re-exports the CLI entry point. |
 | `Interacciones_variables.yml` | Distance thresholds, acceptors and donors per residue |
 | `src/interactions_search/align.py` | Structural alignment utility (`align-protein` CLI), see [Structural Alignment](#structural-alignment-alignpy) below |
+
+### Package layout (`src/interactions_search/`)
+
+The pipeline described below is implemented as one module per stage:
+
+| Module | Responsibility |
+|---|---|
+| `config.py` | Loads and validates `Interacciones_variables.yml` (pydantic) |
+| `geometry.py` | Pure geometric helpers: center of mass, angles, ring centroids, planarity, convex-hull volume |
+| `io_pdb.py` | PDB reading, `split_pdb`, input validation |
+| `ligand_hotpoints.py` | Ligand acceptor/donor/aromatic hot-points (RDKit + SMARTS) and their 2D PNGs |
+| `receptor_site.py` | Receptor active-site residues and their points of interest |
+| `contacts.py` | Distance-based contact search (H-bond, hydrophobic, salt bridge, π-cation) and angle validation |
+| `bias.py` | GOLD bias probe file (`.bpf`) export |
+| `pockets.py` | Hydrophobic pocket detection (`search_hydrophobic_pockets`) |
+| `plotting.py` | Convex-hull PNGs (scatter + solid surface) |
+| `vmd.py` | VMD `.tcl` script generation |
+| `pipeline.py` | Orchestrates all of the above into `analyze_pair()` |
+| `cli.py` | Argument parsing and batch/complex-PDB pair resolution (`main()`) |
+| `align.py` | Structural alignment utility (`align-protein` CLI) |
+
+This is a structural split only — no behavior changed; `tests/test_smoke.py` runs the full pipeline end-to-end against fixture PDBs to guard against regressions.
 
 ---
 
@@ -309,7 +331,7 @@ pockets:
 
 A single hydrophobic contact (one residue, one ligand atom) doesn't tell you whether the
 ligand sits in a real, enclosing binding pocket, or just brushes past a residue on one
-side. `search_hydrophobic_pockets()` (in `Interactions_search.py`) answers that question
+side. `search_hydrophobic_pockets()` (in `src/interactions_search/pockets.py`) answers that question
 with two independent criteria, both must hold:
 
 1. **Multiple residues on the same ligand fragment.** Ligand hydrophobic atoms (matched by
