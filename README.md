@@ -10,6 +10,7 @@ Detects and classifies non-covalent interactions between a ligand and a protein 
 |---|---|
 | `Interactions_search.py` | Main script |
 | `Interacciones_variables.yml` | Distance thresholds, acceptors and donors per residue |
+| `src/interactions_search/align.py` | Structural alignment utility (`align-protein` CLI), see [Structural Alignment](#structural-alignment-alignpy) below |
 
 ---
 
@@ -197,6 +198,52 @@ Example with a PDB containing protein + ligand LIG + HEM group:
 ├── complex_LIG.pdb       ← organic ligand + its CONECT records
 └── complex_HEM.pdb       ← haem group
 ```
+
+---
+
+## Structural Alignment (`align.py`)
+
+Installed as the package's `interactions_search.align` module, with an `align-protein`
+console script (available after `pip install -e .`). Given a reference PDB and a protein
+PDB, aligns the protein onto the reference by CA-atom superposition (BioPython
+`Superimposer`) over the overlapping residue range of a chosen chain, then writes out the
+aligned structure and reports the RMSD. Useful as a pre-processing step before running
+`Interactions_search.py` on structures that need to be in the same frame (e.g. comparing
+poses/ligands across multiple crystal structures of the same protein).
+
+```bash
+align-protein -R reference.pdb -P protein.pdb -C A
+
+# keep only chains A and B in the aligned output (the alignment chain -C is always kept)
+align-protein -R reference.pdb -P protein.pdb -C A -K A B
+```
+
+### Arguments
+
+| Argument | Description |
+|---|---|
+| `-R / --reference` | Reference PDB (the structure being aligned onto). |
+| `-P / --protein` | Protein PDB to align. |
+| `-C / --Chain` | Chain identifier used for alignment (default: `A`). Must exist in both PDBs. |
+| `-K / --keep-chains` | Chain(s) to keep in the aligned output PDB (drops the rest). The alignment chain (`-C`) is always kept even if omitted here. |
+
+### How it works
+
+1. Loads both PDBs and selects chain `-C` from each.
+2. Restricts the fit to the residue-number range common to both chains (`max(first)` to
+   `min(last)`), matching residues by number (not list index) so gaps or missing residues
+   don't misalign the selection.
+3. Superimposes using each residue's `CA` atom in that range; raises if the atom counts
+   don't match or no CA atoms are found in the range.
+4. Applies the resulting transformation to **all** atoms of the protein structure (every
+   chain, not just `-C`), then optionally drops chains not listed in `-K`.
+
+### Outputs
+
+| File | Content |
+|---|---|
+| `<protein>_alig.pdb` | Aligned structure (all kept chains, transformed) |
+| `<protein>_resultados.txt` | Reference/protein names, aligned residue range, and RMSD (Å) |
 
 ---
 
