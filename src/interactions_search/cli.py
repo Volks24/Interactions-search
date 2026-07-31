@@ -64,11 +64,18 @@ def main():
             sys.exit(1)
         print(f"  HETATM   -> {list(het_paths.keys())}")
         if args.lig_name:
-            if args.lig_name not in het_paths:
-                print(f"  Error: '{args.lig_name}' not found. Available: {list(het_paths.keys())}")
-                shutil.rmtree(tmp_dir, ignore_errors=True)
-                sys.exit(1)
-            pairs = [(str(protein_path), str(het_paths[args.lig_name]))]
+            lig_key = args.lig_name
+            if lig_key not in het_paths:
+                # Nombre "pelado" (ej. NAI) con copias en varias cadenas (NAI_B, NAI_C, ...):
+                # se resuelve automáticamente a la copia de la cadena pasada en -c.
+                by_chain_key = f'{lig_key}_{args.chain_receptor}'
+                if by_chain_key in het_paths:
+                    lig_key = by_chain_key
+                else:
+                    print(f"  Error: '{args.lig_name}' not found. Available: {list(het_paths.keys())}")
+                    shutil.rmtree(tmp_dir, ignore_errors=True)
+                    sys.exit(1)
+            pairs = [(str(protein_path), str(het_paths[lig_key]))]
         elif len(het_paths) == 1:
             resname, lig_path = next(iter(het_paths.items()))
             print(f"  Selected: {resname}")

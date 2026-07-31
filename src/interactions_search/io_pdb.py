@@ -70,15 +70,23 @@ def split_pdb(pdb_path, output_dir='.', exclude_water=True, force_ligand_names=N
     force_ligand_names : set de resnames (ej: {'TF3', '7FW'}) que se tratan como ligando
                          aunque estén escritos como ATOM en vez de HETATM en el PDB.
 
+    Los grupos se separan por (cadena, resname): si un mismo resname aparece en más
+    de una cadena (ej. varias copias del complejo en la unidad asimétrica), cada
+    copia se escribe en su propio archivo — nunca se fusionan copias de cadenas
+    distintas, porque promediar sus coordenadas para el centro de masa del ligando
+    arruina la búsqueda de sitio activo (que sí queda acotada a una única cadena).
+
     Retorna:
         protein_path : Path al PDB de la proteína
-        het_paths    : dict {resname: Path}  —  vacío si no hay HETATM
+        het_paths    : dict {label: Path}  —  vacío si no hay HETATM.
+                       label es el resname si es única su cadena, o
+                       '{resname}_{cadena}' si el resname aparece en varias cadenas.
     """
     WATER_NAMES = {'HOH', 'WAT', 'TIP', 'TIP3', 'SOL', 'DOD'}
     force_ligand_names = {n.upper() for n in force_ligand_names} if force_ligand_names else set()
 
     protein_lines = []
-    het_lines     = defaultdict(list)   # resname -> [líneas HETATM]
+    het_lines     = defaultdict(list)   # (chain, resname) -> [líneas HETATM]
     conect_lines  = []
     header_lines  = []
 
@@ -88,14 +96,14 @@ def split_pdb(pdb_path, output_dir='.', exclude_water=True, force_ligand_names=N
             if rec == 'ATOM':
                 resname = line[17:20].strip()
                 if resname in force_ligand_names:
-                    het_lines[resname].append('HETATM' + line[6:])
+                    het_lines[(line[21], resname)].append('HETATM' + line[6:])
                 else:
                     protein_lines.append(line)
             elif rec == 'HETATM':
                 resname = line[17:20].strip()
                 if exclude_water and resname in WATER_NAMES:
                     continue
-                het_lines[resname].append(line)
+                het_lines[(line[21], resname)].append(line)
             elif rec == 'CONECT':
                 conect_lines.append(line)
             elif rec in ('TER', 'REMARK', 'HEADER', 'TITLE', 'COMPND', 'SOURCE', 'SEQRES'):
@@ -114,24 +122,34 @@ def split_pdb(pdb_path, output_dir='.', exclude_water=True, force_ligand_names=N
             f.write('END\n')
 
     # --- Grupos HETATM ---
+    # Etiqueta cada grupo: 'RESNAME' si su cadena es única, 'RESNAME_CHAIN' si el
+    # resname se repite en más de una cadena (evita fusionar copias distintas).
+    resname_chains = defaultdict(set)
+    for chain, resname in het_lines:
+        resname_chains[resname].add(chain)
+
+    def _label(chain, resname):
+        return resname if len(resname_chains[resname]) == 1 else f'{resname}_{chain}'
+
     # Pre-indexar seriales de cada grupo para filtrar CONECT
     group_serials = {}
-    for resname, lines in het_lines.items():
+    for key, lines in het_lines.items():
         serials = set()
         for l in lines:
             try:
                 serials.add(int(l[6:11]))
             except ValueError:
                 pass
-        group_serials[resname] = serials
+        group_serials[key] = serials
 
     het_paths = {}
-    for resname, lines in het_lines.items():
-        het_path = out / f'{stem}_{resname}.pdb'
+    for (chain, resname), lines in het_lines.items():
+        label = _label(chain, resname)
+        het_path = out / f'{stem}_{label}.pdb'
         with open(het_path, 'w') as f:
             f.writelines(lines)
             # CONECT cuyos átomos pertenecen a este grupo
-            my_serials = group_serials[resname]
+            my_serials = group_serials[(chain, resname)]
             for cl in conect_lines:
                 referenced = set()
                 for i in range(6, min(len(cl.rstrip()), 31), 5):
@@ -144,7 +162,7 @@ def split_pdb(pdb_path, output_dir='.', exclude_water=True, force_ligand_names=N
                 if referenced & my_serials:
                     f.write(cl)
             f.write('END\n')
-        het_paths[resname] = het_path
+        het_paths[label] = het_path
 
     return protein_path, het_paths
 
