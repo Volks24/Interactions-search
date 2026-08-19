@@ -11,7 +11,14 @@ import pandas as pd
 from Bio.PDB import PDBParser
 from rdkit import Chem
 
-from interactions_search.bias import export_bpf, export_bpf_pdb
+from interactions_search.bias import (
+    export_bpf,
+    export_bpf_pdb,
+    export_bpf_pdb_points,
+    export_bpf_pdb_receptor,
+    export_bpf_points,
+    export_bpf_receptor,
+)
 from interactions_search.config import load_config
 from interactions_search.contacts import (
     Busqueda_Antecesor_Lig,
@@ -22,6 +29,7 @@ from interactions_search.contacts import (
     search_salt_bridges,
 )
 from interactions_search.geometry import angle_three_points, convex_hull_volume
+from interactions_search.ideal_sites import ideal_site_points
 from interactions_search.io_pdb import extract_coords_from_pdb, remove_bias
 from interactions_search.ligand_hotpoints import (
     generate_df_ligand,
@@ -42,7 +50,8 @@ from interactions_search.vmd import (
     scripting_vmd_pockets,
 )
 
-__all__ = ["carga_variables", "add_interaction_coords", "print_summary", "analyze_pair"]
+__all__ = ["carga_variables", "add_interaction_coords", "print_summary", "analyze_pair",
+           "analyze_site_bias"]
 
 
 def carga_variables(config_path=None):
@@ -452,3 +461,79 @@ def analyze_pair(receptor_pdb, Ligand_imput, chain_receptor, cfg):
         _append_cumulative_csv(dat, 'Interactions_close.csv')
         _append_cumulative_csv({'Receptor': receptor, 'Ligand': ligand,
                                  'CM X': CM[0], 'CM Y': CM[1], 'CM Z': CM[2]}, 'CM_all.csv')
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Modo especial: bias points del receptor alrededor de una coordenada
+# ──────────────────────────────────────────────────────────────────────────────
+
+def analyze_site_bias(receptor_pdb, chain_receptor, point, radius, cfg, method='atom'):
+    """Modo especial sin ligando: dada una coordenada arbitraria `point`
+    (x, y, z) -- por ejemplo, donde se espera que caiga un ligando -- busca
+    todos los residuos del receptor dentro de `radius` Å (reutilizando
+    active_site_residues(), igual que analyze_pair() pero centrado en `point`
+    en vez del centro de masa de un ligando real), y exporta sus puntos de
+    bias como .bpf (GOLD) + PDB dummy para VMD. No usa nada del ligando: es
+    exclusivamente para cuando no hay una pose de ligando disponible.
+
+    method:
+      'atom'  (default) -- un punto de bias por átomo/anillo del receptor,
+              en su propia coordenada (Coordenadas_interes_receptor()).
+      'ideal' -- abanico de puntos "ideales": geometría de H-bond (distancia +
+              ángulo + diedro) hacia donde debería caer el átomo COMPLEMENTARIO
+              del ligando, más el abanico de posiciones de stacking para
+              anillos aromáticos (ideal_sites.py, puerto de
+              ideal_interaction_sites.py). Requiere un PDB del receptor
+              protonado (nomenclatura Maestro/Amber) para los grupos donores;
+              los aceptores basados en átomos pesados y los aromáticos no lo
+              necesitan.
+
+    Útil para generar bias points del receptor antes de tener una pose de
+    ligando (ej. para guiar un docking ciego con GOLD en una región conocida
+    del sitio activo)."""
+    if method not in ('atom', 'ideal'):
+        raise ValueError(f"method inválido: {method!r} (usar 'atom' o 'ideal')")
+
+    receptor = Path(receptor_pdb).stem
+    px, py, pz = point
+    folder = f'{receptor}_site_{px:.1f}_{py:.1f}_{pz:.1f}'
+    Path(folder).mkdir(exist_ok=True)
+
+    pdb_parser = PDBParser(QUIET=True)
+    structure  = pdb_parser.get_structure('pdb', receptor_pdb)
+    # lig='' -> no se excluye ningún residuo por nombre (no hay ligando real acá).
+    DF_Active_Site = active_site_residues(structure, list(point), chain_receptor, radius, '')
+
+    suffix   = '' if method == 'atom' else '_ideal'
+    bpf_path = f'{folder}/{receptor}_site{suffix}.bpf'
+    pdb_path = f'{folder}/{receptor}_site{suffix}_bias.pdb'
+
+    if method == 'atom':
+        receptor_points = Coordenadas_interes_receptor(
+            cfg['Aceptores_Prot'], cfg['Dadores_Prot'], DF_Active_Site)
+        export_bpf_receptor(receptor_points, bpf_path)
+        export_bpf_pdb_receptor(receptor_points, pdb_path)
+        n_points = len(receptor_points)
+        counts   = receptor_points['Type'].value_counts() if n_points else {}
+        result   = receptor_points
+    else:
+        resids = DF_Active_Site['Pos'].unique().tolist()
+        rows   = ideal_site_points(structure, chain_receptor, resids)
+        export_bpf_points(rows, bpf_path)
+        export_bpf_pdb_points(rows, pdb_path)
+        n_points = len(rows)
+        counts   = pd.Series([r[3] for r in rows]).value_counts() if rows else {}
+        result   = rows
+
+    shutil.copy(receptor_pdb, f'{folder}/{Path(receptor_pdb).name}')
+
+    print(f"\n  Site bias [{method}] @ ({px:.2f}, {py:.2f}, {pz:.2f}), radius {radius} Å")
+    if n_points == 0:
+        print(f"  [WARN] No bias points found within {radius} Å.")
+    else:
+        for t, n in counts.items():
+            print(f"    {t:<10}: {n}")
+    print(f"  -> {bpf_path}")
+    print(f"  -> {pdb_path}\n")
+
+    return result

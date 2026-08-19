@@ -91,6 +91,59 @@ python Interactions_search.py -x complex.pdb -c A -n LIG
 
 If multiple HETATM groups are present and `-n` is not specified, the script lists the available names and exits without analysing.
 
+### Mode 4 — Site bias (no ligand)
+
+Given a receptor and an arbitrary coordinate (e.g. where a ligand is expected to sit —
+a docking box centre, a cavity found by another tool), finds every receptor residue
+within a radius (default 10 Å) of that point and exports their acceptor/donor/aromatic
+points as a `.bpf` + dummy PDB, using the same receptor-site logic as the regular
+pipeline (`active_site_residues()` / `Coordenadas_interes_receptor()` in
+`receptor_site.py`) but centred on the given point instead of a real ligand's centre of
+mass. No `-l`/ligand input needed.
+
+```bash
+python Interactions_search.py -r protein.pdb -c A --site-point 12.3 -4.5 30.1
+python Interactions_search.py -r protein.pdb -c A --site-point 12.3 -4.5 30.1 --site-radius 8
+python Interactions_search.py -r protein.pdb -c A --site-point 12.3 -4.5 30.1 --site-method ideal
+```
+
+Useful for generating GOLD bias points ahead of docking, before a ligand pose exists.
+Output goes to `<receptor>_site_<x>_<y>_<z>/`: `<receptor>_site[_ideal].bpf`,
+`<receptor>_site[_ideal]_bias.pdb` (dummy atoms, same `DON`/`ACC`/`ARO` convention as
+the regular ligand `.bpf` — see [Bias Probe File](#bias-probe-file)), and a copy of the
+receptor PDB.
+
+| Argument | Description |
+|---|---|
+| `--site-point X Y Z` | Coordinate to search around. Requires `-r`; incompatible with `-x`/`-l`. |
+| `--site-radius` | Search radius in Å (default: `10.0`). |
+| `--site-method` | `atom` (default) or `ideal` — see below. |
+
+Two independent point-placement methods, selected by `--site-method`:
+
+- **`atom`** (default) — one bias point per receptor acceptor/donor atom or aromatic-ring
+  centroid, placed **at the atom's own coordinate** (`receptor_site.py`, same logic used
+  internally by the regular pipeline's active-site search). Works on any receptor PDB.
+- **`ideal`** — a **fan** of points per group: instead of the atom's own position, computes
+  where the ligand's *complementary* atom would ideally sit — H-bond geometry (distance +
+  angle + dihedral) for acceptors/donors, plus stacked and parallel-displaced positions for
+  aromatic rings (`src/interactions_search/ideal_sites.py`, a Python 3 port of the
+  standalone `ideal_interaction_sites.py` script at the repo root, not otherwise wired into
+  the package). Produces several points per acceptor/donor group (e.g. 5 around a
+  carbonyl/carboxylate oxygen at 120°/150°/180°/210°/240°) and 14 per aromatic ring, instead
+  of a single point. **Requires the receptor PDB to have explicit hydrogens** (Maestro/Amber
+  naming — `HNE`/`HH11`/`HH12`/`HH21`/`HH22` for ARG, `HD21`/`HD22` ASN, `HE21`/`HE22` GLN,
+  `HG`/`HG1`/`HH` SER/THR/TYR, `HE1` TRP, `HZ1`/`HZ2`/`HZ3` LYS, `HD1`/`HE2` HIS with explicit
+  `HIE`/`HID`/`HIP` protonation) for the receptor-donor groups; acceptor groups based on
+  heavy atoms only (carbonyl, carboxylate, amide, imidazole) and aromatic rings don't need H
+  and still work without one — points needing a missing H atom are silently skipped rather
+  than erroring.
+
+This is receptor-only in both cases — it never touches the ligand side: the regular
+per-pair `.bpf` (`options.bias`, see [Bias Probe File](#bias-probe-file)) keeps using the
+ligand's real hot-point positions, where an "ideal" position doesn't apply since the actual
+atom position is already known.
+
 If the complex PDB has no `HETATM` records at all (ligand saved as `ATOM`, e.g. some CHARMM/AMBER-prepped structures), use `-f` to tell `split_pdb` which residue name(s) to treat as ligand:
 
 ```bash

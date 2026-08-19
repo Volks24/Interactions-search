@@ -1,9 +1,16 @@
 """Bias probe file (.bpf) para GOLD: puntos de los hot-points químicos del
 ligando (aceptor/donor/aromático), exportados como .bpf y como PDB dummy
-para visualización en VMD."""
+para visualización en VMD.
+
+También soporta el caso inverso: puntos de bias del *receptor* (aceptor/
+donor/aromático de los residuos del sitio activo, ver receptor_site.py) en
+vez de los del ligando -- usado por el modo "site bias" (analyze_site_bias en
+pipeline.py) para generar un .bpf alrededor de una coordenada arbitraria sin
+necesidad de una pose de ligando."""
 from __future__ import annotations
 
-__all__ = ["export_bpf", "export_bpf_pdb"]
+__all__ = ["export_bpf", "export_bpf_pdb", "export_bpf_receptor", "export_bpf_pdb_receptor",
+           "export_bpf_points", "export_bpf_pdb_points"]
 
 # Vset/r fijos por tipo, tomados de receptor_fs(6).bpf (referencia de formato
 # provista) — no varían por átomo, son la misma convención para todo don/acc/aro.
@@ -52,12 +59,7 @@ def _collect_bias_points(DF_Lig, DF_true=None):
     return rows
 
 
-def export_bpf(DF_Lig, filepath, DF_true=None):
-    """Genera un archivo .bpf (bias probe file, formato GOLD: header 'x y z
-    Vset r type') a partir de los hot-points del ligando (ver
-    _collect_bias_points; DF_true filtra a solo los validados). Vset y r son
-    fijos por tipo (_BPF_PARAMS)."""
-    rows = _collect_bias_points(DF_Lig, DF_true)
+def _write_bpf(rows, filepath):
     with open(filepath, 'w') as f:
         f.write('x\ty\tz\tVset\tr\ttype\n')
         for x, y, z, tipo in rows:
@@ -68,13 +70,7 @@ def export_bpf(DF_Lig, filepath, DF_true=None):
 _BPF_RESNAME = {'don': 'DON', 'acc': 'ACC', 'aro': 'ARO'}
 
 
-def export_bpf_pdb(DF_Lig, filepath, DF_true=None):
-    """PDB 'dummy' con un átomo H por punto de bias (mismos puntos y mismo
-    orden que export_bpf; DF_true filtra a solo los validados), para poder
-    cargar y visualizar los puntos de bias en VMD junto al receptor/ligando.
-    resname = DON/ACC/ARO según el tipo, chain 'X', un residuo por átomo
-    (dummy, sin significado bioquímico)."""
-    rows = _collect_bias_points(DF_Lig, DF_true)
+def _write_bpf_pdb(rows, filepath):
     with open(filepath, 'w') as f:
         for i, (x, y, z, tipo) in enumerate(rows, start=1):
             resname = _BPF_RESNAME[tipo]
@@ -83,3 +79,62 @@ def export_bpf_pdb(DF_Lig, filepath, DF_true=None):
                 f"{x:8.3f}{y:8.3f}{z:8.3f}{1.00:6.2f}{0.00:6.2f}          {'H':>2}\n"
             )
         f.write('END\n')
+
+
+def export_bpf(DF_Lig, filepath, DF_true=None):
+    """Genera un archivo .bpf (bias probe file, formato GOLD: header 'x y z
+    Vset r type') a partir de los hot-points del ligando (ver
+    _collect_bias_points; DF_true filtra a solo los validados). Vset y r son
+    fijos por tipo (_BPF_PARAMS)."""
+    _write_bpf(_collect_bias_points(DF_Lig, DF_true), filepath)
+
+
+def export_bpf_pdb(DF_Lig, filepath, DF_true=None):
+    """PDB 'dummy' con un átomo H por punto de bias (mismos puntos y mismo
+    orden que export_bpf; DF_true filtra a solo los validados), para poder
+    cargar y visualizar los puntos de bias en VMD junto al receptor/ligando.
+    resname = DON/ACC/ARO según el tipo, chain 'X', un residuo por átomo
+    (dummy, sin significado bioquímico)."""
+    _write_bpf_pdb(_collect_bias_points(DF_Lig, DF_true), filepath)
+
+
+_RECEPTOR_TYPE_MAP = {'Aceptor': 'acc', 'Dador': 'don', 'aromatic': 'aro'}
+
+
+def _collect_bias_points_receptor(receptor_points):
+    """Misma idea que _collect_bias_points pero a partir de receptor_points
+    (salida de Coordenadas_interes_receptor en receptor_site.py: columnas
+    Type/Pos/Residue/Atom/X/Y/Z). Un punto por átomo aceptor/donor del
+    receptor y uno por centroide de anillo aromático (ya viene un solo row
+    por anillo, Atom == 'center')."""
+    rows = []
+    for _, r in receptor_points.iterrows():
+        tipo = _RECEPTOR_TYPE_MAP.get(r['Type'])
+        if tipo is None:
+            continue
+        rows.append((float(r['X']), float(r['Y']), float(r['Z']), tipo))
+    return rows
+
+
+def export_bpf_receptor(receptor_points, filepath):
+    """Igual que export_bpf pero para puntos de bias del *receptor* (ver
+    _collect_bias_points_receptor) -- usado por el modo "site bias" para
+    generar un .bpf alrededor de una coordenada arbitraria, sin ligando."""
+    _write_bpf(_collect_bias_points_receptor(receptor_points), filepath)
+
+
+def export_bpf_pdb_receptor(receptor_points, filepath):
+    """Equivalente a export_bpf_pdb para puntos de bias del receptor."""
+    _write_bpf_pdb(_collect_bias_points_receptor(receptor_points), filepath)
+
+
+def export_bpf_points(rows, filepath):
+    """.bpf a partir de una lista ya armada de (x, y, z, tipo) -- usada por
+    el método 'ideal' de analyze_site_bias (ideal_sites.py), que arma las
+    filas con la geometría completa (abanico) en vez de un punto por átomo."""
+    _write_bpf(rows, filepath)
+
+
+def export_bpf_pdb_points(rows, filepath):
+    """Equivalente a export_bpf_points pero en formato PDB dummy."""
+    _write_bpf_pdb(rows, filepath)

@@ -9,7 +9,7 @@ import sys
 import tempfile
 
 from interactions_search.io_pdb import split_pdb, validate_inputs
-from interactions_search.pipeline import analyze_pair, carga_variables
+from interactions_search.pipeline import analyze_pair, analyze_site_bias, carga_variables
 
 __all__ = ["main"]
 
@@ -26,6 +26,11 @@ def main():
             '  PDB complejo : -x complejo.pdb -c A\n'
             '                 -x complejo.pdb -c A -n LIG\n'
             '  Sin HETATM   : -x complejo.pdb -c A -f TF3 (ligando guardado como ATOM)\n'
+            '  Site bias    : -r proteina.pdb -c A --site-point X Y Z [--site-radius 10]\n'
+            '                 [--site-method atom|ideal]\n'
+            '                 (sin -l: puntos de bias del receptor alrededor de una\n'
+            '                 coordenada arbitraria, sin necesidad de una pose de ligando.\n'
+            '                 "ideal" requiere el receptor protonado)\n'
         )
     )
     grp = parser.add_mutually_exclusive_group(required=True)
@@ -45,8 +50,36 @@ def main():
     parser.add_argument('--config', default=None, metavar='CONFIG.yml',
                         help='Ruta al archivo YAML de configuración '
                              '(por defecto: Interacciones_variables.yml en la raíz del proyecto).')
+    parser.add_argument('--site-point', nargs=3, type=float, default=None,
+                        metavar=('X', 'Y', 'Z'),
+                        help='Modo especial (requiere -r, no -l ni -x): en vez de analizar un '
+                             'ligando, busca los residuos del receptor dentro de --site-radius '
+                             'de esta coordenada y exporta sus puntos de bias '
+                             '(aceptor/donor/aromático) como .bpf + PDB dummy.')
+    parser.add_argument('--site-radius', type=float, default=10.0,
+                        help='Radio (Å) de búsqueda alrededor de --site-point (default: 10.0).')
+    parser.add_argument('--site-method', choices=['atom', 'ideal'], default='atom',
+                        help="'atom' (default): un punto de bias por átomo/anillo del receptor, "
+                             "en su propia coordenada. 'ideal': abanico de puntos ideales de "
+                             "H-bond/stacking (distancia+ángulo+diedro) hacia donde debería caer "
+                             "el átomo complementario del ligando; requiere el receptor protonado "
+                             "(nomenclatura Maestro/Amber) para los grupos donores.")
 
     args = parser.parse_args()
+
+    # ── Modo especial: site bias (sin ligando) ─────────────────────
+    if args.site_point is not None:
+        if args.complex_pdb:
+            parser.error("--site-point no es compatible con -x/--complex; usá -r/--receptor_pdb.")
+        if not args.receptor_pdb:
+            parser.error("--site-point requiere -r/--receptor_pdb.")
+        (_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+         Aceptores_Prot, Dadores_Prot, _, _) = carga_variables(args.config)
+        analyze_site_bias(args.receptor_pdb, args.chain_receptor, tuple(args.site_point),
+                          args.site_radius,
+                          {'Aceptores_Prot': Aceptores_Prot, 'Dadores_Prot': Dadores_Prot},
+                          method=args.site_method)
+        return
 
     # ── Resolver lista de pares (receptor, ligando) ───────────────
     pairs    = []
