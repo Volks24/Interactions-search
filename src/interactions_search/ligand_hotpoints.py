@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+from openbabel import openbabel as ob
 from rdkit import Chem
 from rdkit.Chem import rdDepictor
 from rdkit.Chem.Draw import rdMolDraw2D
@@ -18,6 +19,48 @@ __all__ = [
     "search_rings",
     "visualize_rings",
 ]
+
+
+def _openbabel_h_flags(pdb_path, n_atoms):
+    """Por cada atomo (mismo orden/indice 0-based que RDKit al leer el mismo
+    PDB), True si OpenBabel -- que SI percibe correctamente enlaces dobles
+    C=O/C=N a partir de geometria 3D sin CONECT records -- le asigna al menos
+    un H (implicito o explicito).
+
+    Por que hace falta esto: Chem.MolFromPDBFile no percibe ordenes de enlace
+    de forma fiable cuando el PDB no trae CONECT (el caso normal para
+    ligandos de cristalografia); en la practica termina asignando enlace
+    simple a la mayoria de los oxigenos terminales (carbonilo, sulfonilo,
+    carboxilato) y rellena la valencia con un H implicito, marcando como
+    "donor" atomos que en realidad no tienen ningun H real. OpenBabel
+    (`PerceiveBondOrders`) resuelve esto correctamente para los mismos casos
+    (ya se usa con el mismo proposito, para deteccion de anillos aromaticos,
+    en el companion script prepare_bias.py de AutoDock Bias).
+
+    Devuelve una lista de bool de largo n_atoms; si no se puede leer el PDB
+    con OpenBabel, devuelve None (el llamador debe tratarlo como "no
+    disponible" y no filtrar nada, para no romper el comportamiento si
+    OpenBabel no esta instalado)."""
+    try:
+        conv = ob.OBConversion()
+        conv.SetInAndOutFormats("pdb", "pdb")
+        obmol = ob.OBMol()
+        if not conv.ReadFile(obmol, str(pdb_path)):
+            return None
+        obmol.PerceiveBondOrders()
+    except Exception:
+        return None
+
+    flags = [None] * n_atoms
+    for atom in ob.OBMolAtomIter(obmol):
+        idx = atom.GetIdx() - 1  # OpenBabel es 1-indexed, RDKit 0-indexed
+        if 0 <= idx < n_atoms:
+            flags[idx] = (atom.GetImplicitHCount() + atom.ExplicitHydrogenCount()) > 0
+    if any(f is None for f in flags):
+        # desalineacion de indices entre RDKit y OpenBabel (atomos distintos,
+        # PDB no estandar, etc.) -- mas seguro no filtrar que filtrar mal
+        return None
+    return flags
 
 
 def _draw_mol_labeled(mol, highlight_atoms, atom_labels, filename, size=(600, 600)):
@@ -41,7 +84,14 @@ def _draw_mol_labeled(mol, highlight_atoms, atom_labels, filename, size=(600, 60
 
 def search_hot_points(Ligand_imput, mol, pdb_coords, ligand_plot, folder):
 
-    acceptor_smarts = ['[O;H1]', '[O;H0]', '[N;H1]', '[N;H0]', '[n]', '[o]', '[N+]']
+    # [N;H1] se saco de acceptor_smarts: en RDKit [N;H] (donor_smarts) es
+    # exactamente [N;H1], asi que un N con un solo H (amina secundaria,
+    # N-H de amida/sulfonamida) matcheaba los dos patrones a la vez.
+    # Quimicamente ese N dona via su H (el par libre suele estar
+    # deslocalizado hacia el grupo vecino, ej. sulfonamida/amida) -- no tiene
+    # sentido tratarlo tambien como aceptor. Un N sin H (piridina, amina
+    # terciaria, amida sin H) sigue siendo aceptor via [N;H0].
+    acceptor_smarts = ['[O;H1]', '[O;H0]', '[N;H0]', '[n]', '[o]', '[N+]']
     donor_smarts    = ['[O;H]', '[N;H2]', '[N;H]', '[S;H]', '[nH]']
 
     acceptor_atoms, donor_atoms = [], []
@@ -56,6 +106,16 @@ def search_hot_points(Ligand_imput, mol, pdb_coords, ligand_plot, folder):
         for match in mol.GetSubstructMatches(pattern):
             for atom_idx in match:
                 donor_atoms.append(atom_idx)
+
+    # Validacion cruzada con OpenBabel: RDKit (Chem.MolFromPDBFile) no
+    # percibe bien los ordenes de enlace sin CONECT records y suele marcar
+    # oxigenos/nitrogenos terminales como si tuvieran H aunque en realidad
+    # sean carbonilo/sulfonilo/carboxilato (ver docstring de
+    # _openbabel_h_flags). Se descartan los "donor" que OpenBabel dice que
+    # no tienen ningun H real.
+    ob_has_h = _openbabel_h_flags(Ligand_imput, mol.GetNumAtoms())
+    if ob_has_h is not None:
+        donor_atoms = [idx for idx in donor_atoms if ob_has_h[idx]]
 
     if ligand_plot == 'Yes':
         stem = Path(Ligand_imput).stem

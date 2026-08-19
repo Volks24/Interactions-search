@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
   "biopython",
   "rdkit",
+  "openbabel-wheel",
   "pandas",
   "numpy",
   "pyyaml",
