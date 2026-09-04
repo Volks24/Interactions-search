@@ -19,6 +19,7 @@ from interactions_search.bias import (
     export_bpf_points,
     export_bpf_receptor,
 )
+from interactions_search.chi_angles import compute_pocket_chi_angles
 from interactions_search.config import load_config
 from interactions_search.contacts import (
     Busqueda_Antecesor_Lig,
@@ -400,6 +401,9 @@ def analyze_pair(receptor_pdb, Ligand_imput, chain_receptor, cfg):
         export_bpf_pdb(DF_Lig, f'{folder}/{receptor}_{ligand}_bias.pdb', bias_df_true)
 
     df_pocket_summary.to_csv(f'{folder}/Pockets_{receptor}_{ligand}.csv', index=False)
+
+    df_pocket_chi = compute_pocket_chi_angles(df_pocket_summary, DF_Active_Site)
+    df_pocket_chi.to_csv(f'{folder}/Pockets_{receptor}_{ligand}_chi.csv', index=False)
 
     if Volume_Plot == 'Yes':
         if site_hull is not None:

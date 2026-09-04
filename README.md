@@ -10,6 +10,7 @@ Detects and classifies non-covalent interactions between a ligand and a protein 
 |---|---|
 | `Interactions_search.py` | Compatibility shim at the repo root — `python Interactions_search.py ...` still works exactly as before. All logic lives in the `interactions_search` package (below); this file just re-exports the CLI entry point. |
 | `Interacciones_variables.yml` | Distance thresholds, acceptors and donors per residue |
+| `src/interactions_search/data/chi_angles.json` | Side-chain chi1-chi5 dihedral atom definitions per residue (static IUPAC reference data, packaged with the module — not project config), used by `chi_angles.py` to compute pocket residue rotamer angles |
 | `src/interactions_search/align.py` | Structural alignment utility (`align-protein` CLI), see [Structural Alignment](#structural-alignment-alignpy) below |
 
 ### Package layout (`src/interactions_search/`)
@@ -26,6 +27,7 @@ The pipeline described below is implemented as one module per stage:
 | `contacts.py` | Distance-based contact search (H-bond, hydrophobic, salt bridge, π-cation) and angle validation |
 | `bias.py` | GOLD bias probe file (`.bpf`) export |
 | `pockets.py` | Hydrophobic pocket detection (`search_hydrophobic_pockets`) |
+| `chi_angles.py` | Side-chain chi1-chi5 angles of validated pocket residues (`compute_pocket_chi_angles`), from `chi_angles.json` |
 | `plotting.py` | Convex-hull PNGs (scatter + solid surface) |
 | `vmd.py` | VMD `.tcl` script generation |
 | `pipeline.py` | Orchestrates all of the above into `analyze_pair()` |
@@ -440,6 +442,34 @@ pocket criteria (e.g. only 2 residues), or vice versa.
 
 ---
 
+## Side-chain chi angles
+
+For every pocket that qualifies as `Is_Pocket == Yes`, `compute_pocket_chi_angles()`
+(`src/interactions_search/chi_angles.py`) computes the side-chain torsion angles
+(chi1-chi5, in degrees, standard IUPAC dihedral convention around the B-C bond of each
+`A-B-C-D` atom quartet) of every contacting residue, using the atom definitions in
+[`chi_angles.json`](src/interactions_search/data/chi_angles.json) (e.g. LEU chi1 = `N-CA-CB-CG`, chi2 = `CA-CB-CG-CD1`).
+Coordinates are taken from `DF_Active_Site`, which already holds every atom of each
+active-site residue (not just the H-bond/aromatic points of interest), so no extra PDB
+read is needed. A chi is left blank (`None`) when the residue has no such angle (e.g. ALA
+has none, VAL only has chi1) or when one of its 4 atoms is missing from the PDB (common
+for partially resolved side chains in crystal structures). Histidine protonation variants
+(`HID`/`HIE`/`HIP`) reuse the `HIS` atom definitions.
+
+This runs independently of `Is_Pocket` filtering elsewhere — only residues belonging to a
+*validated* pocket get a row; residues on rejected fragments (too few contacts or poor
+`Coverage_R`) are not included, since chi angles are meant to characterize the binding
+pocket's actual rotamer conformation, not every active-site residue.
+
+`chi_angles.json` lives inside the package (`src/interactions_search/data/`), not at the
+repo root like `Interacciones_variables.yml`: it's static IUPAC reference data the user
+never edits per-project, not tunable config, so `chi_angles.py` loads it as a packaged
+resource via `importlib.resources` (declared in `pyproject.toml` under
+`[tool.setuptools.package-data]`). This means it ships correctly with a `pip install` from
+a wheel, unlike a file that only exists in a cloned repo.
+
+---
+
 ## Bias Probe File
 
 If `options.bias: 'Yes'`, two files with the ligand's H-bond/aromatic hot-points are
@@ -473,6 +503,7 @@ appears as `aromatic` or `pi_cation` in the validated interactions.
 | `<folder>/Interaction_<rec>_<lig>_threshold.csv` | Filtered by distance |
 | `<folder>/Interaction_<rec>_<lig>_true.csv` | Validated by distance and angle |
 | `<folder>/Pockets_<rec>_<lig>.csv` | Hydrophobic pocket candidates (see "Hydrophobic Pockets" above), one row per ligand fragment |
+| `<folder>/Pockets_<rec>_<lig>_chi.csv` | Side-chain chi angles (chi1-chi5, °) of the residues in each *validated* pocket (`Is_Pocket == Yes`), one row per (pocket, residue) — see "Side-chain chi angles" below |
 | `<folder>/<rec>_<lig>.bpf` | GOLD bias probe file (see "Bias Probe File" above); requires `bias: 'Yes'` |
 | `<folder>/<rec>_<lig>_bias.pdb` | Same bias points as dummy PDB atoms, for visualising in VMD; requires `bias: 'Yes'` |
 | `<folder>/ActiveSite_<rec>_<lig>_volume.png` | 3D scatter of the whole active site's atoms + convex-hull vertices (if `volume_plot: 'Yes'`) |
@@ -561,6 +592,7 @@ Everything is stored inside a single folder per pair `<receptor>_<ligand>/`:
 ├── Interaction_*_threshold.csv← filtered by distance
 ├── Interaction_*_true.csv     ← validated by distance + angle
 ├── Pockets_*.csv              ← hydrophobic pocket candidates
+├── Pockets_*_chi.csv          ← chi angles of validated pocket residues
 ├── <rec>_<lig>.bpf            ← GOLD bias probe file (if bias: Yes)
 ├── <rec>_<lig>_bias.pdb       ← same bias points as dummy atoms, for VMD (if bias: Yes)
 ├── ActiveSite_*_volume.png    ← 3D scatter + convex hull of the whole active site (if volume_plot: Yes)

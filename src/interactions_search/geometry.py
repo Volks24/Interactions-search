@@ -12,6 +12,7 @@ from scipy.spatial import ConvexHull, QhullError
 __all__ = [
     "center_of_mass",
     "angle_three_points",
+    "dihedral_angle",
     "center_aromatic_ring",
     "get_aromatic_coord",
     "convex_hull_volume",
@@ -76,6 +77,27 @@ def angle_three_points(Donor,Aceptor,Aceptor_Antecedent):
     angle = np.arccos(cosine_angle)
 
     return (np.degrees(angle))  # calculated angle in radians to degree
+
+
+def dihedral_angle(p0, p1, p2, p3):
+    """Ángulo diedro con signo (-180°, 180°] definido por 4 puntos consecutivos
+    p0-p1-p2-p3, medido alrededor del enlace p1-p2 (usado para los ángulos
+    chi de cadena lateral). A diferencia de angle_three_points (ángulo entre
+    3 puntos, sin signo), esto es una torsión: proyecta p0 y p3 sobre el
+    plano perpendicular al enlace central y mide el ángulo entre esas
+    proyecciones."""
+    p0, p1, p2, p3 = (np.asarray(p, dtype=float) for p in (p0, p1, p2, p3))
+    b1 = p1 - p0
+    b2 = p2 - p1
+    b3 = p3 - p2
+
+    n1 = np.cross(b1, b2)
+    n2 = np.cross(b2, b3)
+    m1 = np.cross(n1, b2 / np.linalg.norm(b2))
+
+    x = np.dot(n1, n2)
+    y = np.dot(m1, n2)
+    return float(np.degrees(np.arctan2(y, x)))
 
 
 def center_aromatic_ring(Aromatic_Ring):

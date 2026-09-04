@@ -1,0 +1,59 @@
+{
+  "metadata": {
+    "description": "Chi (side-chain) dihedral angle atom definitions per residue, used to compute rotamer torsion angles (chi1-chi5) from PDB coordinates. Each entry is a dash-separated string of 4 atom names defining the dihedral, in order.",
+    "residue_note": "Only residues with a rotatable side chain beyond CB are included; ALA, GLY are omitted as they have no chi angles (VAL/THR/SER etc. have only chi1).",
+    "angle_definition": "For a dihedral 'A-B-C-D', the angle is measured around the B-C bond, computed from the coordinates of A, B, C, D in that order (e.g. via the standard dihedral/torsion formula)."
+  },
+  "chi_angles": {
+    "chi1": {
+      "ARG": "N-CA-CB-CG",
+      "ASN": "N-CA-CB-CG",
+      "ASP": "N-CA-CB-CG",
+      "CYS": "N-CA-CB-SG",
+      "GLN": "N-CA-CB-CG",
+      "GLU": "N-CA-CB-CG",
+      "HIS": "N-CA-CB-CG",
+      "ILE": "N-CA-CB-CG1",
+      "LEU": "N-CA-CB-CG",
+      "LYS": "N-CA-CB-CG",
+      "MET": "N-CA-CB-CG",
+      "PHE": "N-CA-CB-CG",
+      "PRO": "N-CA-CB-CG",
+      "SER": "N-CA-CB-OG",
+      "THR": "N-CA-CB-OG1",
+      "TRP": "N-CA-CB-CG",
+      "TYR": "N-CA-CB-CG",
+      "VAL": "N-CA-CB-CG1"
+    },
+    "chi2": {
+      "ARG": "CA-CB-CG-CD",
+      "ASN": "CA-CB-CG-OD1",
+      "ASP": "CA-CB-CG-OD1",
+      "GLN": "CA-CB-CG-CD",
+      "GLU": "CA-CB-CG-CD",
+      "HIS": "CA-CB-CG-ND1",
+      "ILE": "CA-CB-CG1-CD1",
+      "LEU": "CA-CB-CG-CD1",
+      "LYS": "CA-CB-CG-CD",
+      "MET": "CA-CB-CG-SD",
+      "PHE": "CA-CB-CG-CD1",
+      "PRO": "CA-CB-CG-CD",
+      "TRP": "CA-CB-CG-CD1",
+      "TYR": "CA-CB-CG-CD1"
+    },
+    "chi3": {
+      "ARG": "CB-CG-CD-NE",
+      "GLN": "CB-CG-CD-OE1",
+      "GLU": "CB-CG-CD-OE1",
+      "LYS": "CB-CG-CD-CE",
+      "MET": "CB-CG-SD-CE"
+    },
+    "chi4": {
+      "ARG": "CG-CD-NE-CZ",
+      "LYS": "CG-CD-CE-NZ"
+    },
+    "chi5": {
+      "ARG": "CD-NE-CZ-NH1"
+    }
+  }
+}
