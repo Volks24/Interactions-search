@@ -8,7 +8,7 @@ matplotlib.use('Agg')  # headless: sin esto matplotlib puede requerir un $DISPLA
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-__all__ = ["plot_hull_volume", "plot_hull_surface"]
+__all__ = ["plot_hull_volume", "plot_hull_surface", "plot_ramachandran"]
 
 
 def plot_hull_volume(points, hull, title, filename):
@@ -53,5 +53,39 @@ def plot_hull_surface(points, hull, title, filename):
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
     ax.set_title(title)
+    fig.savefig(filename, dpi=200)
+    plt.close(fig)
+
+
+def plot_ramachandran(df_phi_psi, title, filename):
+    """PNG de dispersión phi (X) vs psi (Y) para los residuos del sitio
+    activo (df_phi_psi: columnas Pos, Residue, phi, psi — de
+    ramachandran.compute_active_site_phi_psi). Filas con phi o psi en None
+    (vecino faltante/gap de secuencia) se descartan. GLY (sin restricción de
+    Cβ) y PRO (anillo que fija phi) se destacan aparte por ser los outliers
+    esperados de un plot de Ramachandran estándar."""
+    df = df_phi_psi.dropna(subset=['phi', 'psi'])
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.set_xlim(-180, 180)
+    ax.set_ylim(-180, 180)
+    ax.set_xticks(range(-180, 181, 60))
+    ax.set_yticks(range(-180, 181, 60))
+    ax.axhline(0, color='0.85', linewidth=0.8, zorder=0)
+    ax.axvline(0, color='0.85', linewidth=0.8, zorder=0)
+    ax.set_xlabel('phi (°)')
+    ax.set_ylabel('psi (°)')
+    ax.set_title(title)
+
+    is_gly = df['Residue'] == 'GLY'
+    is_pro = df['Residue'] == 'PRO'
+    other  = ~(is_gly | is_pro)
+    ax.scatter(df.loc[other, 'phi'], df.loc[other, 'psi'], marker='o', color='black', label='other')
+    ax.scatter(df.loc[is_gly, 'phi'], df.loc[is_gly, 'psi'], marker='^', color='tab:green', label='GLY')
+    ax.scatter(df.loc[is_pro, 'phi'], df.loc[is_pro, 'psi'], marker='s', color='tab:orange', label='PRO')
+    for _, row in df.iterrows():
+        ax.annotate(f"{row['Residue']}{row['Pos']}", (row['phi'], row['psi']),
+                   fontsize=6, xytext=(3, 3), textcoords='offset points')
+    if len(df):
+        ax.legend(loc='upper right', fontsize=8)
     fig.savefig(filename, dpi=200)
     plt.close(fig)

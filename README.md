@@ -28,7 +28,8 @@ The pipeline described below is implemented as one module per stage:
 | `bias.py` | GOLD bias probe file (`.bpf`) export |
 | `pockets.py` | Hydrophobic pocket detection (`search_hydrophobic_pockets`) |
 | `chi_angles.py` | Side-chain chi1-chi5 angles of pocket-fragment residues (`compute_pocket_chi_angles`) and of every active-site residue (`compute_active_site_chi_angles`), from `chi_angles.json` |
-| `plotting.py` | Convex-hull PNGs (scatter + solid surface) |
+| `ramachandran.py` | Backbone phi/psi angles of every active-site residue (`compute_active_site_phi_psi`) |
+| `plotting.py` | Convex-hull PNGs (scatter + solid surface) and the Ramachandran scatter PNG |
 | `vmd.py` | VMD `.tcl` script generation |
 | `pipeline.py` | Orchestrates all of the above into `analyze_pair()` |
 | `cli.py` | Argument parsing and batch/complex-PDB pair resolution (`main()`) |
@@ -476,6 +477,33 @@ a wheel, unlike a file that only exists in a cloned repo.
 
 ---
 
+## Ramachandran (backbone phi/psi) angles
+
+`compute_active_site_phi_psi()` (`src/interactions_search/ramachandran.py`) computes the
+backbone torsion angles phi and psi (degrees, IUPAC convention) for every residue in
+`DF_Active_Site` — same scope as `compute_active_site_chi_angles()`, i.e. every residue
+within `centroid_distance` Å of the ligand, not just ones forming a validated interaction.
+
+Unlike chi (which only needs atoms from the residue itself), phi and psi need the
+**neighbouring** residues' backbone atoms — phi = C(i-1)-N(i)-CA(i)-C(i), psi =
+N(i)-CA(i)-C(i)-N(i+1) — so the previous/next residue is looked up in the full receptor
+chain (`structure[0][chain_receptor]`), not in `DF_Active_Site`, in case that neighbour
+falls just outside the active-site radius. A residue's phi and/or psi is left as `None`
+when:
+- it's the first/last residue of the chain (no previous/next residue at all),
+- there's a numbering gap (the neighbour found isn't `pos ± 1`, i.e. a missing residue in
+  the crystal structure — no real peptide bond to measure), or
+- one of the four required backbone atoms (`N`/`CA`/`C`) is missing from the PDB.
+
+`plot_ramachandran()` (`src/interactions_search/plotting.py`) renders a phi-vs-psi scatter
+PNG (rows with `None` dropped), labelling each point with `<residue><pos>` and marking
+GLY (▲, no side-chain steric restriction — often falls outside the usual favoured regions)
+and PRO (■, ring-constrained phi) separately from the rest (●), since those are the
+expected outliers of a standard Ramachandran plot. Generated only if `options.volume_plot:
+'Yes'` (same flag that gates the hull PNGs).
+
+---
+
 ## Bias Probe File
 
 If `options.bias: 'Yes'`, two files with the ligand's H-bond/aromatic hot-points are
@@ -511,6 +539,8 @@ appears as `aromatic` or `pi_cation` in the validated interactions.
 | `<folder>/Pockets_<rec>_<lig>.csv` | Hydrophobic pocket candidates (see "Hydrophobic Pockets" above), one row per ligand fragment |
 | `<folder>/Pockets_<rec>_<lig>_chi.csv` | Side-chain chi angles (chi1-chi5, °) of the residues in every hydrophobic pocket candidate fragment (validated or not, tagged by `Is_Pocket`), one row per (pocket, residue) — see "Side-chain chi angles" below |
 | `<folder>/ActiveSite_<rec>_<lig>_chi.csv` | Side-chain chi angles (chi1-chi5, °) of **every** residue in the active site, regardless of interaction/pocket status, one row per residue — see "Side-chain chi angles" below |
+| `<folder>/ActiveSite_<rec>_<lig>_ramachandran.csv` | Backbone phi/psi angles (°) of **every** residue in the active site, one row per residue — see "Ramachandran (backbone phi/psi) angles" below |
+| `<folder>/ActiveSite_<rec>_<lig>_ramachandran.png` | Ramachandran scatter plot (phi vs psi) of the active-site residues (if `volume_plot: 'Yes'`) |
 | `<folder>/<rec>_<lig>.bpf` | GOLD bias probe file (see "Bias Probe File" above); requires `bias: 'Yes'` |
 | `<folder>/<rec>_<lig>_bias.pdb` | Same bias points as dummy PDB atoms, for visualising in VMD; requires `bias: 'Yes'` |
 | `<folder>/ActiveSite_<rec>_<lig>_volume.png` | 3D scatter of the whole active site's atoms + convex-hull vertices (if `volume_plot: 'Yes'`) |
@@ -601,6 +631,8 @@ Everything is stored inside a single folder per pair `<receptor>_<ligand>/`:
 ├── Pockets_*.csv              ← hydrophobic pocket candidates
 ├── Pockets_*_chi.csv          ← chi angles of pocket-fragment residues (validated or not)
 ├── ActiveSite_*_chi.csv       ← chi angles of every active-site residue
+├── ActiveSite_*_ramachandran.csv ← phi/psi angles of every active-site residue
+├── ActiveSite_*_ramachandran.png ← Ramachandran scatter plot (if volume_plot: Yes)
 ├── <rec>_<lig>.bpf            ← GOLD bias probe file (if bias: Yes)
 ├── <rec>_<lig>_bias.pdb       ← same bias points as dummy atoms, for VMD (if bias: Yes)
 ├── ActiveSite_*_volume.png    ← 3D scatter + convex hull of the whole active site (if volume_plot: Yes)
@@ -645,6 +677,7 @@ Smoke tests in [`tests/test_smoke.py`](tests/test_smoke.py) run the full pipelin
 - For batch analysis of multiple ligands, the script can be called in a shell loop; with `cumulative_output: 'Yes'`, `Interactions_close.csv` and `CM_all.csv` are appended automatically across runs (set to `'No'` to disable).
 - Non-standard residues not listed in `acceptors` / `donors` in the YAML are silently skipped.
 - Aromatic rings in the ligand must contain more than 5 atoms and be planar (RMSD to the best-fit plane ≤ `Ring_Planarity_RMSD_Max`) to be considered. Planarity, not RDKit's aromaticity flag, is used because `Chem.MolFromPDBFile` does not reliably perceive aromaticity from PDB files without explicit bond orders.
+- `geometry.dihedral_angle()` (used for chi and phi/psi) had a sign-convention bug in earlier versions — its output was the exact negative of the standard IUPAC/Biopython/PyMOL convention. Fixed and verified against `Bio.PDB.vectors.calc_dihedral()` across a full chain. If you have chi/phi/psi CSVs generated before this fix, their angles are sign-flipped relative to the current output.
 
 ---
 
