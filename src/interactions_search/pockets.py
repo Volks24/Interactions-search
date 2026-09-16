@@ -151,8 +151,6 @@ def search_hydrophobic_pockets(mol, pdb_coords, DF_Active_Site, Distancia_Hidrof
             contacted_lig_atoms.add(lig_idx)
 
         n_residues = len(residues)
-        if n_residues < min_residues:
-            continue
 
         frag_xyz = np.array([[pdb_coords[i][5], pdb_coords[i][6], pdb_coords[i][7]]
                              for i in contacted_lig_atoms], dtype=float)

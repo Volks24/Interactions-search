@@ -20,7 +20,7 @@ import pandas as pd
 
 from interactions_search.geometry import dihedral_angle
 
-__all__ = ["compute_residue_chi_angles", "compute_pocket_chi_angles"]
+__all__ = ["compute_residue_chi_angles", "compute_pocket_chi_angles", "compute_active_site_chi_angles"]
 
 _CHI_NAMES = ["chi1", "chi2", "chi3", "chi4", "chi5"]
 
@@ -70,23 +70,50 @@ _RESIDUE_TOKEN_RE = re.compile(r"^([A-Z]+)(\d+)$")
 
 
 def compute_pocket_chi_angles(df_pocket_summary, DF_Active_Site):
-    """Una fila por (Pocket, residuo) con chi1..chi5, solo para los pockets
-    validados (Is_Pocket == 'Yes'). Parsea la columna 'Residues' del summary
-    (ej. 'LEU63,VAL67,TYR129') en vez de recibir los residuos ya agrupados,
-    para no acoplar pockets.py a este cálculo."""
-    cols = ["Pocket", "Pos", "Residue", *_CHI_NAMES]
+    """Una fila por (Pocket, residuo) con chi1..chi5, para TODOS los fragmentos
+    candidatos del summary (pasen o no el filtro geométrico Is_Pocket) — ese
+    filtro exige 2+ residuos rodeando el fragmento desde varias direcciones
+    (Coverage_R < umbral), así que un residuo único en contacto (ej. un solo
+    TRP hidrofóbico) nunca califica aunque siga siendo parte real del sitio de
+    unión. Se incluye la columna Is_Pocket para poder filtrar después. Parsea
+    la columna 'Residues' del summary (ej. 'LEU63,VAL67,TYR129') en vez de
+    recibir los residuos ya agrupados, para no acoplar pockets.py a este
+    cálculo."""
+    cols = ["Pocket", "Is_Pocket", "Pos", "Residue", *_CHI_NAMES]
     if df_pocket_summary.empty:
         return pd.DataFrame(columns=cols)
 
     rows = []
-    qualifying = df_pocket_summary[df_pocket_summary["Is_Pocket"] == "Yes"]
-    for _, prow in qualifying.iterrows():
+    for _, prow in df_pocket_summary.iterrows():
         for token in prow["Residues"].split(","):
             m = _RESIDUE_TOKEN_RE.match(token)
             if not m:
                 continue
             resname, pos = m.group(1), int(m.group(2))
             chis = compute_residue_chi_angles(DF_Active_Site, pos, resname)
-            rows.append([prow["Pocket"], pos, resname, *(chis[c] for c in _CHI_NAMES)])
+            rows.append([prow["Pocket"], prow["Is_Pocket"], pos, resname,
+                        *(chis[c] for c in _CHI_NAMES)])
 
     return pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame(columns=cols)
+
+
+def compute_active_site_chi_angles(DF_Active_Site):
+    """Una fila por residuo con chi1..chi5, para TODOS los residuos del sitio
+    activo (cualquier residuo cuyo centro de masa cae dentro de
+    centroid_distance del centro del ligando, ver active_site_residues()),
+    sea o no parte de una interacción validada o de un pocket hidrofóbico.
+    A diferencia de compute_pocket_chi_angles (que solo cubre residuos con
+    contacto hidrofóbico), esto es simplemente 'todo lo que se analizó
+    alrededor del ligando'."""
+    cols = ["Pos", "Residue", *_CHI_NAMES]
+    if DF_Active_Site.empty:
+        return pd.DataFrame(columns=cols)
+
+    residues = DF_Active_Site[["Pos", "Residue"]].drop_duplicates().sort_values("Pos")
+    rows = []
+    for _, row in residues.iterrows():
+        pos, resname = int(row["Pos"]), row["Residue"]
+        chis = compute_residue_chi_angles(DF_Active_Site, pos, resname)
+        rows.append([pos, resname, *(chis[c] for c in _CHI_NAMES)])
+
+    return pd.DataFrame(rows, columns=cols)
