@@ -82,10 +82,14 @@ def angle_three_points(Donor,Aceptor,Aceptor_Antecedent):
 def dihedral_angle(p0, p1, p2, p3):
     """Ángulo diedro con signo (-180°, 180°] definido por 4 puntos consecutivos
     p0-p1-p2-p3, medido alrededor del enlace p1-p2 (usado para los ángulos
-    chi de cadena lateral). A diferencia de angle_three_points (ángulo entre
-    3 puntos, sin signo), esto es una torsión: proyecta p0 y p3 sobre el
-    plano perpendicular al enlace central y mide el ángulo entre esas
-    proyecciones."""
+    chi de cadena lateral y para phi/psi de backbone). A diferencia de
+    angle_three_points (ángulo entre 3 puntos, sin signo), esto es una
+    torsión: proyecta p0 y p3 sobre el plano perpendicular al enlace central
+    y mide el ángulo entre esas proyecciones. El signo final se invierte
+    (`-atan2`) para que el resultado siga la convención estándar IUPAC
+    (misma que Bio.PDB.vectors.calc_dihedral y PyMOL) — verificado
+    numéricamente contra calc_dihedral(); sin la inversión, esta
+    implementación da la magnitud correcta pero el signo opuesto."""
     p0, p1, p2, p3 = (np.asarray(p, dtype=float) for p in (p0, p1, p2, p3))
     b1 = p1 - p0
     b2 = p2 - p1
@@ -97,7 +101,7 @@ def dihedral_angle(p0, p1, p2, p3):
 
     x = np.dot(n1, n2)
     y = np.dot(m1, n2)
-    return float(np.degrees(np.arctan2(y, x)))
+    return float(np.degrees(-np.arctan2(y, x)))
 
 
 def center_aromatic_ring(Aromatic_Ring):
