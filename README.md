@@ -483,6 +483,17 @@ for a chi that has zero values across the whole active site (e.g. `chi3.png` is 
 generated if at least one active-site residue — ARG, GLN, GLU, LYS, MET... — has a chi3).
 Generated only if `options.volume_plot: 'Yes'`.
 
+Each point is colored by the residue's physicochemical class (`_AA_CLASS_COLOR` in
+`plotting.py`): nonpolar/hydrophobic (blue), polar uncharged (orange), or charged —
+acidic/basic together (aqua/green), with a legend. Only 3 classes, not the finer
+5-way split (nonpolar / aromatic / polar / acidic / basic) some textbooks use: a
+scatter plot compares every pair of colors at once, and past 3 categories no ordering
+of the project's validated categorical palette clears the normal-vision separation
+floor (see `dataviz`'s `references/palette.md`) — cutting to 3 keeps every pair
+legible instead of shipping colors two people in the room can't reliably tell apart.
+The X-axis label already gives the exact residue, so color only needs to carry the
+coarser class.
+
 ---
 
 ## Ramachandran (backbone phi/psi) angles

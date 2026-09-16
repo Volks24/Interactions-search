@@ -10,6 +10,32 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 __all__ = ["plot_hull_volume", "plot_hull_surface", "plot_ramachandran", "plot_chi_profile"]
 
+# Clasificación fisicoquímica de 3 clases (no 5+: un scatter por definición
+# compara TODOS los pares de colores a la vez —"--pairs all" en el validador
+# de paletas—, y con más de 3 categorías ningún orden de la paleta categórica
+# de referencia pasa el piso de visión normal, aunque el par sea legible para
+# daltónicos; ver dataviz/references/palette.md). Los primeros 3 slots de esa
+# paleta sí pasan todos los pares en ambos modos, por eso el corte queda acá
+# en vez de separar además aromáticos/ácidos/básicos por color.
+_AA_CLASS_COLOR = {
+    # No polar / hidrofóbico — paleta categórica slot 1 (blue)
+    'ALA': '#2a78d6', 'VAL': '#2a78d6', 'LEU': '#2a78d6', 'ILE': '#2a78d6',
+    'MET': '#2a78d6', 'PRO': '#2a78d6', 'PHE': '#2a78d6', 'TRP': '#2a78d6',
+    'GLY': '#2a78d6',
+    # Polar sin carga — slot 2 (orange)
+    'SER': '#eb6834', 'THR': '#eb6834', 'CYS': '#eb6834', 'TYR': '#eb6834',
+    'ASN': '#eb6834', 'GLN': '#eb6834',
+    # Cargado (ácido o básico) — slot 3 (aqua)
+    'ASP': '#1baf7a', 'GLU': '#1baf7a', 'LYS': '#1baf7a', 'ARG': '#1baf7a',
+    'HIS': '#1baf7a', 'HID': '#1baf7a', 'HIE': '#1baf7a', 'HIP': '#1baf7a',
+}
+_AA_CLASS_LABELS = [
+    ('Nonpolar / hydrophobic', '#2a78d6'),
+    ('Polar (uncharged)', '#eb6834'),
+    ('Charged (acidic/basic)', '#1baf7a'),
+]
+_AA_CLASS_FALLBACK = '#898781'  # residuo no clasificado (raro, no estándar)
+
 
 def plot_hull_volume(points, hull, title, filename):
     """PNG de dispersión 3D: todos los puntos (negro) y los vértices de su
@@ -97,7 +123,10 @@ def plot_chi_profile(df_chi, chi_name, title, filename):
     en el orden en que aparecen en df_chi), eje Y = ese chi en grados
     (-180°, 180°], mismo rango y grillas que plot_ramachandran() para que
     ambos se lean con la misma escala. Filas sin ese chi (residuo sin ese
-    ángulo, ej. ALA no tiene ninguno, VAL solo tiene chi1) se descartan."""
+    ángulo, ej. ALA no tiene ninguno, VAL solo tiene chi1) se descartan. Cada
+    punto se colorea según la clase fisicoquímica del residuo (ver
+    _AA_CLASS_COLOR); la etiqueta de residuo en el eje X ya identifica el
+    aminoácido exacto, así que el color aporta la clase, no la identidad."""
     df = df_chi.dropna(subset=[chi_name])
     fig, ax = plt.subplots(figsize=(max(6, 0.35 * len(df) + 1), 5))
     ax.set_ylim(-180, 180)
@@ -107,10 +136,18 @@ def plot_chi_profile(df_chi, chi_name, title, filename):
     ax.set_title(title)
 
     labels = [f"{row['Residue']}{row['Pos']}" for _, row in df.iterrows()]
-    ax.scatter(range(len(df)), df[chi_name], marker='o', color='black', zorder=3)
+    colors = [_AA_CLASS_COLOR.get(row['Residue'], _AA_CLASS_FALLBACK) for _, row in df.iterrows()]
+    ax.scatter(range(len(df)), df[chi_name], marker='o', color=colors, zorder=3)
     ax.set_xticks(range(len(df)))
     ax.set_xticklabels(labels, rotation=90, fontsize=7)
     ax.set_xlim(-0.5, max(len(df) - 0.5, 0.5))
+
+    handles = [plt.Line2D([0], [0], marker='o', linestyle='', color=color, label=label)
+              for label, color in _AA_CLASS_LABELS]
+    if set(df['Residue']) - set(_AA_CLASS_COLOR):
+        handles.append(plt.Line2D([0], [0], marker='o', linestyle='', color=_AA_CLASS_FALLBACK,
+                                  label='Other/non-standard'))
+    ax.legend(handles=handles, loc='upper right', fontsize=7)
     fig.tight_layout()
     fig.savefig(filename, dpi=200)
     plt.close(fig)
