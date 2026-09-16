@@ -27,7 +27,7 @@ The pipeline described below is implemented as one module per stage:
 | `contacts.py` | Distance-based contact search (H-bond, hydrophobic, salt bridge, π-cation) and angle validation |
 | `bias.py` | GOLD bias probe file (`.bpf`) export |
 | `pockets.py` | Hydrophobic pocket detection (`search_hydrophobic_pockets`) |
-| `chi_angles.py` | Side-chain chi1-chi5 angles of validated pocket residues (`compute_pocket_chi_angles`), from `chi_angles.json` |
+| `chi_angles.py` | Side-chain chi1-chi5 angles of pocket-fragment residues (`compute_pocket_chi_angles`) and of every active-site residue (`compute_active_site_chi_angles`), from `chi_angles.json` |
 | `plotting.py` | Convex-hull PNGs (scatter + solid surface) |
 | `vmd.py` | VMD `.tcl` script generation |
 | `pipeline.py` | Orchestrates all of the above into `analyze_pair()` |
@@ -444,22 +444,28 @@ pocket criteria (e.g. only 2 residues), or vice versa.
 
 ## Side-chain chi angles
 
-For every pocket that qualifies as `Is_Pocket == Yes`, `compute_pocket_chi_angles()`
-(`src/interactions_search/chi_angles.py`) computes the side-chain torsion angles
-(chi1-chi5, in degrees, standard IUPAC dihedral convention around the B-C bond of each
-`A-B-C-D` atom quartet) of every contacting residue, using the atom definitions in
-[`chi_angles.json`](src/interactions_search/data/chi_angles.json) (e.g. LEU chi1 = `N-CA-CB-CG`, chi2 = `CA-CB-CG-CD1`).
-Coordinates are taken from `DF_Active_Site`, which already holds every atom of each
-active-site residue (not just the H-bond/aromatic points of interest), so no extra PDB
-read is needed. A chi is left blank (`None`) when the residue has no such angle (e.g. ALA
-has none, VAL only has chi1) or when one of its 4 atoms is missing from the PDB (common
-for partially resolved side chains in crystal structures). Histidine protonation variants
-(`HID`/`HIE`/`HIP`) reuse the `HIS` atom definitions.
+`chi_angles.py` computes side-chain torsion angles (chi1-chi5, in degrees, standard IUPAC
+dihedral convention around the B-C bond of each `A-B-C-D` atom quartet), using the atom
+definitions in [`chi_angles.json`](src/interactions_search/data/chi_angles.json) (e.g. LEU
+chi1 = `N-CA-CB-CG`, chi2 = `CA-CB-CG-CD1`). Coordinates are taken from `DF_Active_Site`,
+which already holds every atom of each active-site residue (not just the H-bond/aromatic
+points of interest), so no extra PDB read is needed. A chi is left blank (`None`) when the
+residue has no such angle (e.g. ALA has none, VAL only has chi1) or when one of its 4 atoms
+is missing from the PDB (common for partially resolved side chains in crystal structures).
+Histidine protonation variants (`HID`/`HIE`/`HIP`) reuse the `HIS` atom definitions.
 
-This runs independently of `Is_Pocket` filtering elsewhere — only residues belonging to a
-*validated* pocket get a row; residues on rejected fragments (too few contacts or poor
-`Coverage_R`) are not included, since chi angles are meant to characterize the binding
-pocket's actual rotamer conformation, not every active-site residue.
+Two functions cover different scopes:
+
+- **`compute_pocket_chi_angles()`** — one row per (pocket, residue) for every hydrophobic
+  pocket *candidate* fragment found by `search_hydrophobic_pockets()`, whether or not it
+  qualifies as `Is_Pocket == Yes` (that column is included in the output so rows can be
+  filtered afterwards). A fragment touched by a single residue, for example, never clears
+  the `Coverage_R` bar on its own but its residue's rotamer is still reported.
+- **`compute_active_site_chi_angles()`** — one row per residue for **every** residue in
+  `DF_Active_Site`, i.e. anything within `centroid_distance` Å of the ligand's centre of mass
+  (see `active_site_residues()` in `receptor_site.py`), regardless of whether it forms any validated interaction or
+  belongs to a hydrophobic pocket at all. This is the broadest view: rotamers for the whole
+  analysed neighbourhood around the ligand.
 
 `chi_angles.json` lives inside the package (`src/interactions_search/data/`), not at the
 repo root like `Interacciones_variables.yml`: it's static IUPAC reference data the user
@@ -503,7 +509,8 @@ appears as `aromatic` or `pi_cation` in the validated interactions.
 | `<folder>/Interaction_<rec>_<lig>_threshold.csv` | Filtered by distance |
 | `<folder>/Interaction_<rec>_<lig>_true.csv` | Validated by distance and angle |
 | `<folder>/Pockets_<rec>_<lig>.csv` | Hydrophobic pocket candidates (see "Hydrophobic Pockets" above), one row per ligand fragment |
-| `<folder>/Pockets_<rec>_<lig>_chi.csv` | Side-chain chi angles (chi1-chi5, °) of the residues in each *validated* pocket (`Is_Pocket == Yes`), one row per (pocket, residue) — see "Side-chain chi angles" below |
+| `<folder>/Pockets_<rec>_<lig>_chi.csv` | Side-chain chi angles (chi1-chi5, °) of the residues in every hydrophobic pocket candidate fragment (validated or not, tagged by `Is_Pocket`), one row per (pocket, residue) — see "Side-chain chi angles" below |
+| `<folder>/ActiveSite_<rec>_<lig>_chi.csv` | Side-chain chi angles (chi1-chi5, °) of **every** residue in the active site, regardless of interaction/pocket status, one row per residue — see "Side-chain chi angles" below |
 | `<folder>/<rec>_<lig>.bpf` | GOLD bias probe file (see "Bias Probe File" above); requires `bias: 'Yes'` |
 | `<folder>/<rec>_<lig>_bias.pdb` | Same bias points as dummy PDB atoms, for visualising in VMD; requires `bias: 'Yes'` |
 | `<folder>/ActiveSite_<rec>_<lig>_volume.png` | 3D scatter of the whole active site's atoms + convex-hull vertices (if `volume_plot: 'Yes'`) |
@@ -592,7 +599,8 @@ Everything is stored inside a single folder per pair `<receptor>_<ligand>/`:
 ├── Interaction_*_threshold.csv← filtered by distance
 ├── Interaction_*_true.csv     ← validated by distance + angle
 ├── Pockets_*.csv              ← hydrophobic pocket candidates
-├── Pockets_*_chi.csv          ← chi angles of validated pocket residues
+├── Pockets_*_chi.csv          ← chi angles of pocket-fragment residues (validated or not)
+├── ActiveSite_*_chi.csv       ← chi angles of every active-site residue
 ├── <rec>_<lig>.bpf            ← GOLD bias probe file (if bias: Yes)
 ├── <rec>_<lig>_bias.pdb       ← same bias points as dummy atoms, for VMD (if bias: Yes)
 ├── ActiveSite_*_volume.png    ← 3D scatter + convex hull of the whole active site (if volume_plot: Yes)
