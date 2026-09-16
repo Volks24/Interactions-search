@@ -38,7 +38,12 @@ from interactions_search.ligand_hotpoints import (
     search_rings,
     visualize_rings,
 )
-from interactions_search.plotting import plot_hull_surface, plot_hull_volume, plot_ramachandran
+from interactions_search.plotting import (
+    plot_chi_profile,
+    plot_hull_surface,
+    plot_hull_volume,
+    plot_ramachandran,
+)
 from interactions_search.pockets import search_hydrophobic_pockets
 from interactions_search.ramachandran import compute_active_site_phi_psi
 from interactions_search.receptor_site import (
@@ -415,6 +420,11 @@ def analyze_pair(receptor_pdb, Ligand_imput, chain_receptor, cfg):
     if Volume_Plot == 'Yes':
         plot_ramachandran(df_phi_psi, f'Ramachandran — active site ({receptor}/{ligand})',
                           f'{folder}/ActiveSite_{receptor}_{ligand}_ramachandran.png')
+        for chi_name in ('chi1', 'chi2', 'chi3', 'chi4', 'chi5'):
+            if df_site_chi[chi_name].notna().any():
+                plot_chi_profile(df_site_chi, chi_name,
+                                 f'{chi_name} — active site ({receptor}/{ligand})',
+                                 f'{folder}/ActiveSite_{receptor}_{ligand}_{chi_name}.png')
         if site_hull is not None:
             site_points = DF_Active_Site[['X', 'Y', 'Z']].values.astype(float)
             site_title  = f'Active site — {Site_Volume:.1f} Å³'

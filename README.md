@@ -475,6 +475,14 @@ resource via `importlib.resources` (declared in `pyproject.toml` under
 `[tool.setuptools.package-data]`). This means it ships correctly with a `pip install` from
 a wheel, unlike a file that only exists in a cloned repo.
 
+`plot_chi_profile()` (`src/interactions_search/plotting.py`) renders one PNG per chi
+(chi1-chi5) from the `ActiveSite_<rec>_<lig>_chi.csv` data: X axis = active-site residues
+(labelled `<residue><pos>`), Y axis = that chi in degrees (-180°, 180°], same scale as the
+Ramachandran plot. Residues without that particular chi are skipped, and no PNG is written
+for a chi that has zero values across the whole active site (e.g. `chi3.png` is only
+generated if at least one active-site residue — ARG, GLN, GLU, LYS, MET... — has a chi3).
+Generated only if `options.volume_plot: 'Yes'`.
+
 ---
 
 ## Ramachandran (backbone phi/psi) angles
@@ -539,6 +547,7 @@ appears as `aromatic` or `pi_cation` in the validated interactions.
 | `<folder>/Pockets_<rec>_<lig>.csv` | Hydrophobic pocket candidates (see "Hydrophobic Pockets" above), one row per ligand fragment |
 | `<folder>/Pockets_<rec>_<lig>_chi.csv` | Side-chain chi angles (chi1-chi5, °) of the residues in every hydrophobic pocket candidate fragment (validated or not, tagged by `Is_Pocket`), one row per (pocket, residue) — see "Side-chain chi angles" below |
 | `<folder>/ActiveSite_<rec>_<lig>_chi.csv` | Side-chain chi angles (chi1-chi5, °) of **every** residue in the active site, regardless of interaction/pocket status, one row per residue — see "Side-chain chi angles" below |
+| `<folder>/ActiveSite_<rec>_<lig>_chi<N>.png` | Scatter plot of chi`<N>` (`N` = 1-5) across the active-site residues that have it, one PNG per chi that has at least one value (if `volume_plot: 'Yes'`) |
 | `<folder>/ActiveSite_<rec>_<lig>_ramachandran.csv` | Backbone phi/psi angles (°) of **every** residue in the active site, one row per residue — see "Ramachandran (backbone phi/psi) angles" below |
 | `<folder>/ActiveSite_<rec>_<lig>_ramachandran.png` | Ramachandran scatter plot (phi vs psi) of the active-site residues (if `volume_plot: 'Yes'`) |
 | `<folder>/<rec>_<lig>.bpf` | GOLD bias probe file (see "Bias Probe File" above); requires `bias: 'Yes'` |
@@ -631,6 +640,7 @@ Everything is stored inside a single folder per pair `<receptor>_<ligand>/`:
 ├── Pockets_*.csv              ← hydrophobic pocket candidates
 ├── Pockets_*_chi.csv          ← chi angles of pocket-fragment residues (validated or not)
 ├── ActiveSite_*_chi.csv       ← chi angles of every active-site residue
+├── ActiveSite_*_chi<N>.png    ← scatter of chi<N> across active-site residues (if volume_plot: Yes, one per chi with data)
 ├── ActiveSite_*_ramachandran.csv ← phi/psi angles of every active-site residue
 ├── ActiveSite_*_ramachandran.png ← Ramachandran scatter plot (if volume_plot: Yes)
 ├── <rec>_<lig>.bpf            ← GOLD bias probe file (if bias: Yes)

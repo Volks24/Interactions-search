@@ -8,7 +8,7 @@ matplotlib.use('Agg')  # headless: sin esto matplotlib puede requerir un $DISPLA
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-__all__ = ["plot_hull_volume", "plot_hull_surface", "plot_ramachandran"]
+__all__ = ["plot_hull_volume", "plot_hull_surface", "plot_ramachandran", "plot_chi_profile"]
 
 
 def plot_hull_volume(points, hull, title, filename):
@@ -87,5 +87,30 @@ def plot_ramachandran(df_phi_psi, title, filename):
                    fontsize=6, xytext=(3, 3), textcoords='offset points')
     if len(df):
         ax.legend(loc='upper right', fontsize=8)
+    fig.savefig(filename, dpi=200)
+    plt.close(fig)
+
+
+def plot_chi_profile(df_chi, chi_name, title, filename):
+    """PNG de dispersión de un único ángulo chi (chi_name: 'chi1'..'chi5')
+    para los residuos del sitio activo: eje X = residuos (uno por posición,
+    en el orden en que aparecen en df_chi), eje Y = ese chi en grados
+    (-180°, 180°], mismo rango y grillas que plot_ramachandran() para que
+    ambos se lean con la misma escala. Filas sin ese chi (residuo sin ese
+    ángulo, ej. ALA no tiene ninguno, VAL solo tiene chi1) se descartan."""
+    df = df_chi.dropna(subset=[chi_name])
+    fig, ax = plt.subplots(figsize=(max(6, 0.35 * len(df) + 1), 5))
+    ax.set_ylim(-180, 180)
+    ax.set_yticks(range(-180, 181, 60))
+    ax.axhline(0, color='0.85', linewidth=0.8, zorder=0)
+    ax.set_ylabel(f'{chi_name} (°)')
+    ax.set_title(title)
+
+    labels = [f"{row['Residue']}{row['Pos']}" for _, row in df.iterrows()]
+    ax.scatter(range(len(df)), df[chi_name], marker='o', color='black', zorder=3)
+    ax.set_xticks(range(len(df)))
+    ax.set_xticklabels(labels, rotation=90, fontsize=7)
+    ax.set_xlim(-0.5, max(len(df) - 0.5, 0.5))
+    fig.tight_layout()
     fig.savefig(filename, dpi=200)
     plt.close(fig)
