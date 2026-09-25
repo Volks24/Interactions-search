@@ -25,10 +25,13 @@ The pipeline described below is implemented as one module per stage:
 | `ligand_hotpoints.py` | Ligand acceptor/donor/aromatic hot-points (RDKit + SMARTS) and their 2D PNGs |
 | `receptor_site.py` | Receptor active-site residues and their points of interest |
 | `contacts.py` | Distance-based contact search (H-bond, hydrophobic, salt bridge, π-cation) and angle validation |
+| `interaction_rules.py` | Shared neighbor search, configurable cutoffs, H-bond/aromatic validation and receptor acceptor geometry for ligand and probe modes |
 | `bias.py` | GOLD bias probe file (`.bpf`) export |
 | `pockets.py` | Hydrophobic pocket detection (`search_hydrophobic_pockets`) |
 | `chi_angles.py` | Side-chain chi1-chi5 angles of pocket-fragment residues (`compute_pocket_chi_angles`) and of every active-site residue (`compute_active_site_chi_angles`), from `chi_angles.json` |
 | `ramachandran.py` | Backbone phi/psi angles of every active-site residue (`compute_active_site_phi_psi`) |
+| `probe.py` | Probe mode: simulated interactions of arbitrary coordinates (`probe_interactions`, `read_probe_file`) |
+| `hotspot_pocket.py` | Hotspot mode: pockets + annotated grid from MD cosolvent hotspot clusters (`analyze_hotspot_pockets`) |
 | `plotting.py` | Convex-hull PNGs (scatter + solid surface) and the Ramachandran scatter PNG |
 | `vmd.py` | VMD `.tcl` script generation |
 | `pipeline.py` | Orchestrates all of the above into `analyze_pair()` |
@@ -71,6 +74,40 @@ python Interactions_search.py -r receptor.pdb -l ligand.pdb -c A
 ```bash
 python Interactions_search.py -r protein.pdb -l ligand.pdb -c A
 ```
+
+### Optional ligand chemistry reference
+
+PDB-only commands remain supported; no SDF or SMILES is required. Optionally,
+provide the chemical structure of the same ligand to assign bond orders, formal
+charges and aromaticity while retaining PDB coordinates, atom names and order:
+
+```bash
+python Interactions_search.py -r protein.pdb -l ligand.pdb -c A --ligand-smiles 'CC(=O)N'
+python Interactions_search.py -r protein.pdb -l ligand.pdb -c A --ligand-sdf ligand.sdf
+python Interactions_search.py -x complex.pdb -n LIG -c A --ligand-sdf ligand.sdf
+```
+
+Use only one reference option, with one ligand per execution. An SDF must contain
+exactly one molecule. The complete heavy-atom connectivity must match the PDB;
+invalid references or incompatible explicit hydrogens cause an error, not a
+silent fallback. No atoms are added, removed or repositioned. Equivalent graph
+matches prefer compatibility with explicit H, then existing multiple bonds/charges
+in the PDB, with first-match tie breaking and a warning. More than 1000 matches
+is rejected as ambiguous. Check symmetric groups and protonation assignments.
+The reference supplies chemistry, not stereochemical
+validation or a new pose.
+
+With a reference, donor/acceptor detection uses RDKit Lipinski HBA/HBD SMARTS on
+a copy with hydrogens collapsed, plus protonated aromatic N-H donors,
+and rings must be chemically aromatic as well as planar. Without a reference,
+the existing SMARTS/Open Babel donor/acceptor procedure and geometric ring
+approximation remain in use. Planarity alone is not proof of aromaticity.
+
+Both paths now include five-member rings. To reproduce the previous PDB-only
+ring-size filter, omit the reference and add `--legacy-rings` (more than five atoms).
+Output filenames are unchanged. Interaction CSV schema version 2 appends a `Reason`
+column; existing columns retain their order. Readers requiring an exact column list
+must include the new column.
 
 ### Mode 2 — Batch (multiple ligands, one receptor)
 
@@ -157,6 +194,140 @@ python Interactions_search.py -x complex.pdb -c A -f TF3
 python Interactions_search.py -x complex.pdb -c A -f TF3 7FW -n TF3
 ```
 
+### Mode 5 — Probe (simulate interactions at given coordinates)
+
+Given a receptor and one or more coordinates, simulates which interactions a ligand
+atom/group would make if it sat at each point — no ligand PDB needed. Each point is
+tested in one or more **roles** (`--probe-type`, default `all`) against the complementary
+receptor groups, with the same thresholds as the regular pipeline:
+
+| Probe role | Receptor partner | Output `Type` | Validation |
+|---|---|---|---|
+| `acceptor` | donors (YAML `donors`) | `acceptor` | `Dist < Distances_Hidrogen_Bonds`; if the donor is an explicit H, also the D-H···probe angle (at the H) within `Angle_Hidrogen_Bonds_Min/Max` |
+| `donor` | acceptors (YAML `acceptors`) | `donor` | distance + probe-Acceptor-Antecedent angle, same as the regular pipeline |
+| `aromatic` | TYR/PHE/TRP ring centroids; ARG/LYS/HIS cations | `aromatic`, `pi_cation` | distance only (`Distances_Aromatic`, default 5.5 Å; `Distances_Pi_Cation`, default 5.0 Å) |
+| `hydrophobic` | apolar C atoms, collapsed per residue | `hydrophobic` | `Distances_Hidrofobica` |
+| `cation` | ASP/GLU carboxylate O; aromatic ring centroids | `salt_bridge`, `pi_cation` | `Distances_Salt_Bridge` / `Distances_Pi_Cation` (defaults 4.0 / 5.0 Å) |
+| `anion` | ARG/LYS/HIP N | `salt_bridge` | `Distances_Salt_Bridge` (default 4.0 Å) |
+
+```bash
+# one point, all roles
+python Interactions_search.py -r protein.pdb -c A --probe 12.3 -4.5 30.1
+
+# several points, only as H-bond donor/acceptor
+python Interactions_search.py -r protein.pdb -c A --probe 12.3 -4.5 30.1 --probe 10 -2 28 \
+    --probe-type donor acceptor
+
+# points from a file
+python Interactions_search.py -r protein.pdb -c A --probe-file points.csv
+python Interactions_search.py -r protein.pdb -c A --probe-file protein_site_ideal.bpf
+```
+
+`--probe-file` accepts: a `.bpf` (e.g. the Mode 4 output — its `don`/`acc`/`aro` column sets
+each point's role), a `.pdb` (one point per `ATOM`/`HETATM`; resname `DON`/`ACC`/`ARO`/`HPH`/`CAT`/`ANI`
+sets the role), or any text/CSV with `x y z [role]` rows (header lines are skipped). Points
+without their own role use `--probe-type`. `--probe` and `--probe-file` can be combined.
+
+Notes:
+- A point can't define a ring plane, so for `aromatic`/`pi_cation` rows `Angle` is the angle
+  between the receptor ring normal and the centroid→probe vector (0° = probe over the ring
+  face, 90° = in the ring plane), reported for inspection but not used for validation.
+- For acceptor probes, a receptor heavy-atom donor row is checked by distance only.
+  A receptor explicit-H donor row also checks D-H···probe at H. This differs from
+  the ligand acceptor-side angle, which uses the ligand's antecedent atom that a
+  bare point doesn't have. An explicit-H row without a usable parent is rejected.
+- Donor probes use the same donor–acceptor–antecedent angle as ligand donors.
+  A missing antecedent produces `Angle = NaN`, `Interaction = No` in both modes;
+  missing/degenerate required geometry is not accepted by distance alone.
+- H-bond candidates use `max(Hydrogen_Bond_Search_Distance, Distances_Hidrogen_Bonds)`;
+  the old fixed 4 Å prefilter no longer truncates a larger configured final cutoff.
+- Every point is also checked for **steric clashes**: receptor heavy atoms within
+  `Probe_Clash_Distance` (default 2.5 Å) are
+  reported as `Type = clash`, `Interaction = Clash` and flagged in the console summary — a
+  probe there would sit inside the protein. Mode 4 `ideal` points are placed at the H···A
+  distance (1.9 Å, i.e. where the ligand's *H* would be), so treated as heavy-atom probes they
+  clash with their own partner by construction.
+- The receptor site is built once around the centroid of all points, with radius
+  `centroid_distance` + the farthest point's distance to that centroid.
+
+Output goes to `<receptor>_probe_<label>/` (`<label>` = the point's coordinates for a single
+`--probe`, the file stem for `--probe-file`, or `<N>pts`):
+
+| File | Content |
+|---|---|
+| `Probe_<rec>_all.csv` | Every candidate contact, including `No` and `Clash` rows |
+| `Probe_<rec>_true.csv` | Only `Interaction == 'Yes'` |
+| `<rec>_probe_points.pdb` | Probe points as dummy atoms (resname by role, `PRB` if tested with several), resid = probe number |
+| `vmd_probe_<rec>.tcl` | Receptor + interacting residues + probe spheres + dashed lines per validated interaction (if `vmd_output: 'Yes'`) |
+| `<rec>.pdb` | Copy of the receptor PDB (loaded by the `.tcl`) |
+
+CSV columns: `Probe` (point number), `Probe_Type` (role tested, `-` for clashes),
+`Probe_X/Y/Z`, `Pos R`, `Res`, `Atom`, `Dist`, `Type`, `Angle`, `Interaction`
+(`Yes`/`No`/`Clash`), `Rec_X/Y/Z` (receptor atom, ring centroid, or mean of the collapsed
+hydrophobic atoms), followed by `Reason` (decision code).
+
+### Mode 6 — Pockets from MD hotspots
+
+Builds the pocket around each group of hotspots from a cosolvent MD analysis (acceptor /
+donor / hydrophobic clusters) and fills it with an AutoDock-style grid annotated with
+properties.
+
+```bash
+python Interactions_search.py -r 3mss_complex.pdb -c B --hotspots results_global/ --exclude-res STI MS7
+```
+
+`--hotspots` points to a directory with `acceptors/`, `donors/` and/or `hydrophobics/`
+subfolders, each with `clusters.csv` (`ws_id, x, y, z, R90_A, DG, occ_prob, ...`) and,
+optionally, `cluster_points.pdb` (raw probe positions, resid = `ws_id`) and a `grid_*.dx`
+ΔG map. The receptor must be in the same frame as the hotspots. `--exclude-res` removes
+residues from the receptor — needed when ligands are stored as `ATOM` records, otherwise
+they fill the pocket and every grid point there is discarded as a clash.
+
+Per site:
+
+1. **Sites** — hotspot centers are grouped by single linkage (`link_distance`, 8 Å); sites
+   are numbered by summed ΔG (most favourable = 1). Sites with fewer than `min_hotspots`
+   are listed but not built. Each hotspot contributes its `cluster_points.pdb` points within
+   `R90` of its center (just the center if there are none).
+2. **Pocket residues** — every residue with a heavy atom within `residue_cutoff` (4 Å) of
+   any hotspot point of the site.
+3. **Grid** (`grid_spacing`, 0.375 Å) over the box enclosing those residues and points. A
+   point is kept if it is inside the convex hull of the pocket residues' heavy atoms, more
+   than `grid_clash` (2.6 Å) from every receptor heavy atom, buried (at least
+   `grid_buriedness` = 40% of 30 rays hit the receptor within 10 Å, LIGSITE-style), and
+   connected (26-neighbourhood) to a hotspot point.
+4. **Annotation** of each grid point: ΔG from each `.dx` map at that point, `Best_Type`
+   (type with the lowest ΔG if it reaches `grid_dg_threshold`, -1 kcal/mol, else `none`),
+   and the receptor environment: number of receptor donors / acceptors (within
+   `Distances_Hidrogen_Bonds`), hydrophobic atoms (`Distancia_Hidrofobica`), aromatic ring
+   centroids (`Distances_Aromatic`), cations and anions (`Distances_Salt_Bridge`, default
+   4.0 Å) — the same partners and
+   thresholds as the probe mode (Mode 5), distance only.
+
+Default thresholds were calibrated on 3MSS: the grid of the ATP site contains 100% of the
+STI (imatinib) heavy atoms; for the myristate site it contains the buried part of MS7 and
+leaves out its solvent-exposed head. The parameters live in the `hotspot_pocket:` section
+of `Interacciones_variables.yml`.
+
+Output goes to `<receptor>_hotspot_pockets/`:
+
+| File | Content |
+|---|---|
+| `sites_summary.csv` | One row per site: hotspot counts by type, ΣΔG, best ΔG, center, residues, grid points, `Volume_A3` (points × spacing³), fraction of grid points per `Best_Type`, `Built` |
+| `site_<n>/hotspots.csv` | Hotspots of the site |
+| `site_<n>/residues.csv` | Pocket residues: `Pos`, `Residue`, `Min_Dist` to a hotspot point, `N_Atoms` within the cutoff, `Hotspots`, `Types` |
+| `site_<n>/grid.csv` | Grid points: `X/Y/Z`, `Buriedness`, `DG_acceptor/donor/hydrophobic`, `Best_Type`, `Best_DG`, `N_Rec_Donors/Acceptors/Hydrophobic/Aromatic/Cations/Anions` |
+| `site_<n>/grid.pdb` | Grid points as dummy atoms: resname `ACC`/`DON`/`HPH`/`NON` (Best_Type), occupancy = buriedness, B-factor = Best_DG |
+| `site_<n>/hotspots.pdb` | Hotspot centers: resname by type, occupancy = R90, B-factor = ΔG |
+| `site_<n>/pocket_mask.dx` | Pocket mask (1 inside, 0 outside); an isosurface at 0.5 shows the pocket shape in VMD/PyMOL/Chimera |
+| `site_<n>/vmd_site_<n>.tcl` | Receptor + pocket residues + grid points coloured by type + hotspots + mask isosurface |
+
+Notes:
+- The `.dx` maps are sparse at voxel level: most of the pocket volume has ΔG ≈ 0 (no
+  cosolvent preference), so most points are `Best_Type = none`; the typed points are the
+  cores of the hotspots. The `N_Rec_*` columns describe the chemistry everywhere else.
+- Grid points outside a `.dx` box get `NaN` in that map's column.
+
 ### Arguments
 
 | Argument | Description |
@@ -167,6 +338,12 @@ python Interactions_search.py -x complex.pdb -c A -f TF3 7FW -n TF3
 | `-c / --chain_receptor` | Protein chain (e.g. `A`). |
 | `-n / --lig_name` | HETATM name when multiple groups exist in `--complex`. |
 | `-f / --force_ligand` | Residue name(s) to treat as ligand even if stored as `ATOM` instead of `HETATM` in `--complex`. |
+| `--config` | Path to the YAML config (default: `Interacciones_variables.yml` at the repo root). |
+| `--probe X Y Z` | Probe mode (Mode 5). Repeatable. Requires `-r`; incompatible with `-x`/`-l`/`--site-point`. |
+| `--probe-file` | Probe points from a `.bpf`, `.pdb` or `x y z [role]` text/CSV file (Mode 5). |
+| `--hotspots DIR` | Hotspot mode (Mode 6). Requires `-r`; incompatible with `-x`/`-l`/`--site-point`/`--probe`. |
+| `--exclude-res` | Resnames removed from the receptor in hotspot mode (e.g. ligands stored as `ATOM`). |
+| `--probe-type` | Role(s) for points without their own: `all` (default), `acceptor`, `donor`, `aromatic`, `hydrophobic`, `cation`, `anion`. |
 
 ---
 
@@ -203,7 +380,7 @@ Complex PDB (optional)
 [3] Ligand hot-points  (RDKit + SMARTS)
     ├── H-bond acceptors:  [O;H1], [O;H0], [N;H1], [N;H0], [n], [o], [N+]
     ├── H-bond donors:     [O;H], [N;H2], [N;H], [S;H], [nH]
-    └── Aromatic rings:    detected via ring_info, filtered by size > 5 and by
+    └── Aromatic rings:    detected via ring_info, filtered by size >= 5 and by
                            planarity (best-fit-plane RMSD ≤ Ring_Planarity_RMSD_Max)
         │
         ▼
@@ -225,15 +402,15 @@ Complex PDB (optional)
     │                  lig donor    ↔ rec acceptor    (threshold: Distances_Hidrogen_Bonds)
     ├── Aromatic:      centroid ↔ centroid             (threshold: Distances_Aromatic)
     ├── Hydrophobic:   apolar C lig ↔ apolar C rec     (threshold: Distances_Hidrofobica)
-    ├── Salt bridge:   ± group lig ↔ ∓ group rec       (threshold: 4.0 Å)
-    └── π-cation:      lig ring ↔ ARG/LYS/HIS rec      (threshold: 5.0 Å)
+    ├── Salt bridge:   ± group lig ↔ ∓ group rec       (Distances_Salt_Bridge; default 4.0 Å)
+    └── π-cation:      lig ring ↔ ARG/LYS/HIS rec      (Distances_Pi_Cation; default 5.0 Å)
         │
         ▼
 [7] Angle validation
     ├── H-bond:    D-A···Antecedent angle between 100° and 200°
     ├── Aromatic:  angle between ring planes
-    │               0°–30°  → π-π (parallel / sandwich)
-    │               60°–90° → T-shaped (perpendicular)
+    │               angle < Aromatic_Parallel_Max (default 30°) → parallel / sandwich
+    │               angle > Aromatic_TShaped_Min (default 60°, up to 90°) → T-shaped
     └── Hyd. / salt / π-cat:  validated by distance only
         │
         ▼
@@ -344,6 +521,10 @@ distancias:
   Distances_Hidrogen_Bonds: 3.2   # Å — H-bond threshold
   Distances_Aromatic:       5.5   # Å — centre-to-centre aromatic threshold
   Distances_Hidrofobica:    4.0   # Å — hydrophobic threshold (aligned with PLIP)
+  Hydrogen_Bond_Search_Distance: 4.0  # candidate radius, expanded to final H-bond cutoff if needed
+  Distances_Salt_Bridge:   4.0   # Å — shared by ligand/probe and hotspot environment counts
+  Distances_Pi_Cation:     5.0   # Å — shared by ligand and probe
+  Probe_Clash_Distance:    2.5   # Å — probe clashes, independent of hotspot grid_clash
   centroid_distance:       12.0   # Å — active site search radius
   Distances_C_Simple:       1.54  # Å — C-C single bond (reference)
   Distances_C_Doble:        2.56  # Å — C=C double bond (reference)
@@ -351,6 +532,8 @@ distancias:
 angulos:
   Angle_Hidrogen_Bonds_Min: 100    # ° — minimum Donor-Acceptor-Antecedent angle
   Angle_Hidrogen_Bonds_Max: 180    # ° — maximum angle (180° is the geometric ceiling)
+  Aromatic_Parallel_Max: 30       # ° — accept inter-plane angle strictly below this
+  Aromatic_TShaped_Min:  60       # ° — accept inter-plane angle strictly above this
 
 aromaticidad:
   Ring_Planarity_RMSD_Max:  0.15   # Å — max RMSD to the ring's best-fit plane to
@@ -374,6 +557,15 @@ acceptors_antecedent:  # antecedent atom of each acceptor (for angle calculation
 
 special:               # special cases (e.g. haem group)
   HEM: [FE, 1.59]
+
+hotspot_pocket:        # Mode 6 (--hotspots)
+  link_distance:     8.0     # Å — single-linkage distance between hotspot centers
+  min_hotspots:      3       # sites with fewer hotspots are not built
+  residue_cutoff:    4.0     # Å — residue heavy atom to hotspot point
+  grid_spacing:      0.375   # Å
+  grid_clash:        2.6     # Å — min distance from grid point to receptor heavy atom
+  grid_buriedness:   0.4     # 0-1 — min fraction of buried rays
+  grid_dg_threshold: -1.0    # kcal/mol — min ΔG for Best_Type != 'none'
 
 pockets:
   min_residues:        3     # minimum distinct residues contacting the same ligand fragment
@@ -553,7 +745,7 @@ appears as `aromatic` or `pi_cation` in the validated interactions.
 | File | Content |
 |---|---|
 | `<folder>/Interaction_<rec>_<lig>_all.csv` | All interactions found (no filters) |
-| `<folder>/Interaction_<rec>_<lig>_threshold.csv` | Filtered by distance |
+| `<folder>/Interaction_<rec>_<lig>_threshold.csv` | Filtered by each interaction type's own distance cutoff; angles are not required here |
 | `<folder>/Interaction_<rec>_<lig>_true.csv` | Validated by distance and angle |
 | `<folder>/Pockets_<rec>_<lig>.csv` | Hydrophobic pocket candidates (see "Hydrophobic Pockets" above), one row per ligand fragment |
 | `<folder>/Pockets_<rec>_<lig>_chi.csv` | Side-chain chi angles (chi1-chi5, °) of the residues in every hydrophobic pocket candidate fragment (validated or not, tagged by `Is_Pocket`), one row per (pocket, residue) — see "Side-chain chi angles" below |
@@ -598,6 +790,43 @@ Interaction CSV columns (same schema in `_all`/`_threshold`/`_true`):
 | `Angle` | Validation angle in degrees |
 | `X`, `Y`, `Z` | 3D coordinate of the interaction, selected by `options.interaction_coord`: `'receptor'` (receptor atom or aromatic-ring centroid; mean of the collapsed atoms for `hydrophobic`), `'ligand'` (ligand atom or ring centroid), or `'center'` (midpoint between both, default). `NaN` if the atom/ring couldn't be resolved |
 | `Interaction` | `Yes` / `No` — whether distance and angle criteria are met |
+| `Reason` | Decision code; multiple failed criteria are separated by `;` |
+
+### Decision reasons and run records
+
+Ligand and probe interaction CSVs explain each reported candidate using these codes:
+
+| Code | Meaning |
+|---|---|
+| `distance_outside_cutoff` | Distance does not satisfy the strict cutoff |
+| `angle_outside_range` | Angle does not satisfy the configured range |
+| `missing_required_geometry` | Required geometric information is unavailable |
+| `distance_and_angle_pass` | Both required criteria pass |
+| `distance_pass` | A distance-only contact passes |
+| `distance_only_no_probe_orientation` | Distance passes for an unoriented probe |
+| `steric_clash` | Probe clashes with the receptor |
+
+Reasons use unrounded geometry. Only candidates found by each detector are reported;
+an absent pair is not an explicit rejection row.
+
+Every ligand, probe, site-bias and hotspot analysis writes `config_used.yml` and
+`run_metadata.json` in its output folder. Metadata includes effective parameters,
+CLI arguments when available, input SHA-256 hashes before and after processing,
+software versions, source fingerprint, timestamps, completion status and hashes of
+new or modified outputs inside that folder. External cumulative CSVs are excluded.
+
+`run_history/<run_id>/` preserves each configuration and metadata record, plus
+`ligand_reference.sdf` when a chemical reference was supplied. The saved SDF retains
+template atom order. Root-level records describe the latest attempt. Failed attempts
+are marked `failed` and do not claim unchanged outputs from earlier runs. Handled
+interruptions are marked `interrupted`; a forcibly killed process can remain `running`.
+CLI validation errors before analysis starts do not create a run record.
+
+To repeat an analysis, retain the original inputs and environment, use the saved
+YAML with `--config`, restore mode-specific arguments from metadata and, when present,
+use the archived SDF with `--ligand-sdf`. History does **not** archive all input or
+result files: repeated analyses still overwrite ordinary outputs. See
+[SOP section 13](docs/SOP.md#13-motivos-y-registro-automático-de-corridas).
 
 ### VMD scripts (if `vmd_output: 'Yes'`)
 
@@ -642,6 +871,9 @@ Everything is stored inside a single folder per pair `<receptor>_<ligand>/`:
 
 ```
 <receptor>_<ligand>/
+├── config_used.yml           ← effective configuration, latest attempt
+├── run_metadata.json         ← provenance and status, latest attempt
+├── run_history/<run_id>/     ← configuration, metadata and optional reference SDF
 ├── <receptor>.pdb             ← copy of the receptor PDB
 ├── <ligand>.pdb               ← copy of the ligand PDB
 ├── <ligand>_old.pdb           ← pre-cleanup copy (remove_bias)
@@ -690,6 +922,16 @@ mypy src/
 
 Smoke tests in [`tests/test_smoke.py`](tests/test_smoke.py) run the full pipeline against minimal fixture PDBs in [`tests/fixtures/`](tests/fixtures/) and verify exit code, output folder, CSV columns, and that all validated rows have `Interaction == 'Yes'`.
 
+The suite also includes offline crystallographic validation against ABL–imatinib
+(1IEP) and streptavidin–biotin (1STP): 16 named contact checks, independent geometry,
+rigid transforms, displaced ligands and incomplete receptor rings. Protonation
+tests cover neutral/charged groups with and without explicit H. The complete
+suite currently has **170 passing tests**. See
+[`docs/VALIDACION_QUIMICA.md`](docs/VALIDACION_QUIMICA.md) for provenance, tolerances,
+corrections and limitations. The distributed YAML now includes SER OG, THR OG1
+and TYR OH donor atoms for crystals without explicit H; custom YAML tables remain
+authoritative. Incomplete receptor rings are skipped instead of reconstructed.
+
 ---
 
 ## Notes
@@ -697,12 +939,14 @@ Smoke tests in [`tests/test_smoke.py`](tests/test_smoke.py) run the full pipelin
 - The script should be run from the directory containing the PDB files, or use absolute paths.
 - For batch analysis of multiple ligands, the script can be called in a shell loop; with `cumulative_output: 'Yes'`, `Interactions_close.csv` and `CM_all.csv` are appended automatically across runs (set to `'No'` to disable).
 - Non-standard residues not listed in `acceptors` / `donors` in the YAML are silently skipped.
-- Aromatic rings in the ligand must contain more than 5 atoms and be planar (RMSD to the best-fit plane ≤ `Ring_Planarity_RMSD_Max`) to be considered. Planarity, not RDKit's aromaticity flag, is used because `Chem.MolFromPDBFile` does not reliably perceive aromaticity from PDB files without explicit bond orders.
+- Ligand rings must contain at least 5 atoms and be planar (RMSD to the best-fit plane ≤ `Ring_Planarity_RMSD_Max`). With a chemical reference, aromaticity is also required. PDB-only mode retains the geometric approximation; `--legacy-rings` restores the previous size filter (> 5 atoms).
 - `geometry.dihedral_angle()` (used for chi and phi/psi) had a sign-convention bug in earlier versions — its output was the exact negative of the standard IUPAC/Biopython/PyMOL convention. Fixed and verified against `Bio.PDB.vectors.calc_dihedral()` across a full chain. If you have chi/phi/psi CSVs generated before this fix, their angles are sign-flipped relative to the current output.
 
 ---
 
 ## See also
 
+- [`docs/SOP.md`](docs/SOP.md) — procedimiento operativo: PDB solo, referencias químicas opcionales, compatibilidad, errores y validación.
+- [`docs/VALIDACION_QUIMICA.md`](docs/VALIDACION_QUIMICA.md) — validación cristalográfica y química, casos de control y hallazgos de la etapa 3.
 - [`docs/BASELINE.md`](docs/BASELINE.md) — full behavioral snapshot: pipeline details, config keys, CSV schema, regression check command
 - [`Interacciones_variables.yml`](Interacciones_variables.yml) — live configuration file with all thresholds and per-residue donor/acceptor tables

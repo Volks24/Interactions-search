@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 from rdkit import Chem
 
+from interactions_search.interaction_rules import DEFAULT_DISTANCES, atoms_near, neighbors
+
 __all__ = [
     "residuos_contacto",
     "Busqueda_Antecesor_Lig",
@@ -28,14 +30,8 @@ def residuos_contacto(Receptor_Caso,Lig_Caso,receptor_points,DF_Lig,DF_Interacci
 
     for j in range(Sub_Set_Ligando.shape[0]):
         Coor_Lig = np.array(Sub_Set_Ligando.iloc[j, [1, 2, 3]]).astype(float)
-        distances = np.linalg.norm(Matriz_receptor - Coor_Lig, axis=1)
-
-        # Filtrar las distancias que son menores a 4.5
-        within_distance_indices = np.where(distances < threshold_PH)[0]
-
-        for idx in within_distance_indices:
+        for idx, min_distance in neighbors(Coor_Lig, Matriz_receptor, threshold_PH):
             closest_data = Sub_Set_Receptor.iloc[idx]
-            min_distance = distances[idx]
 
             # Agregar la información al DataFrame
             DF_Interacciones.loc[len(DF_Interacciones.index)] = [
@@ -58,6 +54,9 @@ def Busqueda_Antecesor_Lig(Atomo_ID,Lig_DF):
     # Filtrar átomos que no sean H, excluyendo el propio átomo por serial exacto
     df_filtrado = Lig_DF[~Lig_DF['Element'].str.contains('H')]
     df_filtrado = df_filtrado[df_filtrado['Atom ID'] != Atomo_ID]
+    if len(punto_dado) != 1 or df_filtrado.empty:
+        return np.full(3, np.nan)
+    df_filtrado = df_filtrado.copy()
     # Calcular la distancia euclidiana
     df_filtrado['Distancia'] = np.sqrt((df_filtrado['X'] - punto_dado[0][0])**2 +
                                     (df_filtrado['Y'] - punto_dado[0][1])**2 +
@@ -73,6 +72,8 @@ def Busqueda_Antecesor_Lig(Atomo_ID,Lig_DF):
     return(coord)
 
 def Interaccion_Aromatica(Anillo_Proteina,Anillo_Lig):
+    if Anillo_Proteina.empty:
+        return np.nan
     # Anillo receptor #
     if (Anillo_Proteina.iloc[0,2] == 'TYR') or (Anillo_Proteina.iloc[0,2] == 'PHE'):
         Puntos_Interes = ['CG' , 'CD1' , 'CD2']
@@ -82,10 +83,17 @@ def Interaccion_Aromatica(Anillo_Proteina,Anillo_Lig):
         Puntos_Interes = ['CZ3' , 'CE3' , 'CH2']
         anillo_recept = np.array(Anillo_Proteina[Anillo_Proteina['Atom'].isin(Puntos_Interes)][['X','Y','Z']]).astype(float)
         Anillo_Name = 'CZ3-CE3-CH2'
+    else:
+        return np.nan
     Anillo_Lig = (np.array(Anillo_Lig.iloc[0:3,1:4]))
     return(aromatic_angle(Anillo_Lig,anillo_recept))
 
 def aromatic_angle(anillo_ligand, anillo_recept):
+    anillo_ligand = np.asarray(anillo_ligand, dtype=float)
+    anillo_recept = np.asarray(anillo_recept, dtype=float)
+    if (anillo_ligand.shape != (3, 3) or anillo_recept.shape != (3, 3)
+            or not np.isfinite(anillo_ligand).all() or not np.isfinite(anillo_recept).all()):
+        return np.nan
     # Encontrar los átomos comunes más cercanos
     atomos_comunes = [anillo_ligand[0], anillo_recept[1]]
     # Calcular los vectores normales a los planos aromáticos
@@ -95,8 +103,10 @@ def aromatic_angle(anillo_ligand, anillo_recept):
     producto_punto = np.dot(vector_normal1, vector_normal2)
     norma_vector1 = np.linalg.norm(vector_normal1)
     norma_vector2 = np.linalg.norm(vector_normal2)
+    if norma_vector1 == 0 or norma_vector2 == 0:
+        return np.nan
     # Calcular el ángulo en radianes y convertir a grados
-    angulo_rad = np.arccos(producto_punto / (norma_vector1 * norma_vector2))
+    angulo_rad = np.arccos(np.clip(producto_punto / (norma_vector1 * norma_vector2), -1, 1))
     angulo_deg = np.degrees(angulo_rad)
     # Asegurarse de que el ángulo esté en el rango de 0° a 90°
     if angulo_deg > 90:
@@ -156,20 +166,12 @@ def search_hydrophobic(mol, pdb_coords, DF_Active_Site, Distancia_Hidrofobica):
                   for i in hpho_idx if i < len(pdb_coords)]
     lig_coords = np.array([[p[1], p[2], p[3]] for p in lig_pts], dtype=float)
 
-    rec_mask   = DF_Active_Site.apply(
-        lambda r: r['Atom'] in _HYDROPHOBIC_ATOMS.get(r['Residue'], set()), axis=1)
-    rec_rows   = DF_Active_Site[rec_mask]
-    if rec_rows.empty:
-        return pd.DataFrame(columns=_DF_COLS)
-
-    rec_coords = np.array(rec_rows[['X', 'Y', 'Z']], dtype=float)
     results = []
     for j, lig_pt in enumerate(lig_pts):
-        dists = np.linalg.norm(rec_coords - lig_coords[j], axis=1)
-        for k in np.where(dists < Distancia_Hidrofobica)[0]:
-            r = rec_rows.iloc[k]
+        for r, distance, _ in atoms_near(lig_coords[j], DF_Active_Site,
+                                         _HYDROPHOBIC_ATOMS, Distancia_Hidrofobica):
             results.append([int(r['Pos']), r['Residue'], r['Atom'],
-                             round(dists[k], 3), lig_pt[0], 'hydrophobic', 0.0, 'Yes', lig_pt[4]])
+                             round(distance, 3), lig_pt[0], 'hydrophobic', 0.0, 'Yes', lig_pt[4]])
     if not results:
         return pd.DataFrame(columns=_DF_COLS)
     return _collapse_same_residue_contacts(pd.DataFrame(results, columns=_DF_COLS))
@@ -181,13 +183,14 @@ def search_hydrophobic(mol, pdb_coords, DF_Active_Site, Distancia_Hidrofobica):
 
 _SALT_POS_ATOMS = {'ARG': {'NH1', 'NH2', 'NE'}, 'LYS': {'NZ'}, 'HIP': {'ND1', 'NE2'}}
 _SALT_NEG_ATOMS = {'ASP': {'OD1', 'OD2'}, 'GLU': {'OE1', 'OE2'}}
-_SALT_DIST      = 4.0
+# Compatibility aliases for callers importing the previous defaults.
+_SALT_DIST = DEFAULT_DISTANCES.Distances_Salt_Bridge
 
 _CATION_LIG_SMARTS = ['[N+;H3]', '[N+;H2]', '[N+;H1]', '[n+]', '[NH2]C(=[NH])[NH2]']
 _ANION_LIG_SMARTS  = ['[O-]', '[$(C(=O)[OH])]', '[$(S(=O)(=O)[OH])]']
 
 
-def search_salt_bridges(mol, pdb_coords, DF_Active_Site):
+def search_salt_bridges(mol, pdb_coords, DF_Active_Site, cutoff=_SALT_DIST):
     """Detecta puentes salinos entre grupos cargados del ligando y del receptor."""
     def _lig_pts(smarts_list):
         idx = set()
@@ -206,20 +209,12 @@ def search_salt_bridges(mol, pdb_coords, DF_Active_Site):
     anion_lig  = _lig_pts(_ANION_LIG_SMARTS)
     results = []
 
-    for rec in DF_Active_Site.itertuples(index=False):
-        rc = np.array([rec.X, rec.Y, rec.Z])
-        if rec.Atom in _SALT_NEG_ATOMS.get(rec.Residue, set()):
-            for serial, atom, x, y, z in cation_lig:
-                d = np.linalg.norm(rc - np.array([x, y, z]))
-                if d < _SALT_DIST:
-                    results.append([rec.Pos, rec.Residue, rec.Atom, round(d,3),
-                                     atom, 'salt_bridge', 0.0, 'Yes', serial])
-        if rec.Atom in _SALT_POS_ATOMS.get(rec.Residue, set()):
-            for serial, atom, x, y, z in anion_lig:
-                d = np.linalg.norm(rc - np.array([x, y, z]))
-                if d < _SALT_DIST:
-                    results.append([rec.Pos, rec.Residue, rec.Atom, round(d,3),
-                                     atom, 'salt_bridge', 0.0, 'Yes', serial])
+    for ligand_points, partners in ((cation_lig, _SALT_NEG_ATOMS),
+                                     (anion_lig, _SALT_POS_ATOMS)):
+        for serial, atom, x, y, z in ligand_points:
+            for rec, distance, _ in atoms_near([x, y, z], DF_Active_Site, partners, cutoff):
+                results.append([rec['Pos'], rec['Residue'], rec['Atom'], round(distance, 3),
+                                atom, 'salt_bridge', 0.0, 'Yes', serial])
     return pd.DataFrame(results, columns=_DF_COLS) if results else pd.DataFrame(columns=_DF_COLS)
 
 
@@ -227,21 +222,18 @@ def search_salt_bridges(mol, pdb_coords, DF_Active_Site):
 # Interacciones π-catión
 # ──────────────────────────────────────────────────────────────────────────────
 
-_PI_CATION_DIST     = 5.0
+_PI_CATION_DIST = DEFAULT_DISTANCES.Distances_Pi_Cation
 _CATION_REC_ATOMS   = {'ARG': {'NH1', 'NH2', 'NE'}, 'LYS': {'NZ'},
                         'HIS': {'ND1', 'NE2'}, 'HIP': {'ND1', 'NE2'}}
 
 
-def search_pi_cation(DF_Active_Site, aromatic_lig_df):
+def search_pi_cation(DF_Active_Site, aromatic_lig_df, cutoff=_PI_CATION_DIST):
     """Detecta interacciones π-catión: anillo aromático del ligando vs catión del receptor."""
     results = []
     for cas in aromatic_lig_df['Caso'].unique():
         ring_atoms  = aromatic_lig_df[aromatic_lig_df['Caso'] == cas]
         ring_center = np.mean(np.array(ring_atoms[['Coord X', 'Coord Y', 'Coord Z']]).astype(float), axis=0)
-        for rec in DF_Active_Site.itertuples(index=False):
-            if rec.Atom in _CATION_REC_ATOMS.get(rec.Residue, set()):
-                d = np.linalg.norm(ring_center - np.array([rec.X, rec.Y, rec.Z]))
-                if d < _PI_CATION_DIST:
-                    results.append([rec.Pos, rec.Residue, rec.Atom, round(d,3),
-                                     cas, 'pi_cation', 0.0, 'Yes', np.nan])
+        for rec, distance, _ in atoms_near(ring_center, DF_Active_Site, _CATION_REC_ATOMS, cutoff):
+            results.append([rec['Pos'], rec['Residue'], rec['Atom'], round(distance, 3),
+                            cas, 'pi_cation', 0.0, 'Yes', np.nan])
     return pd.DataFrame(results, columns=_DF_COLS) if results else pd.DataFrame(columns=_DF_COLS)

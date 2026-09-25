@@ -17,6 +17,10 @@ distancias:
   Distances_Hidrogen_Bonds: 3.2
   Distances_Aromatic: 5.5
   Distances_Hidrofobica: 4.0
+  Hydrogen_Bond_Search_Distance: 4.0  # candidatos H-bond; nunca limita el cutoff final si este es mayor
+  Distances_Salt_Bridge: 4.0         # Å — compartido entre ligando, probe y entorno de hotspots
+  Distances_Pi_Cation: 5.0           # Å — compartido entre ligando y probe
+  Probe_Clash_Distance: 2.5          # Å — choques de sondas; independiente de grid_clash
   centroid_distance: 12   # Å — radio de búsqueda del sitio activo (ahora sí se usa)
   Distances_C_Simple : 1.54
   Distances_C_Doble : 2.56
@@ -24,6 +28,8 @@ distancias:
 angulos:
   Angle_Hidrogen_Bonds_Min: 100   # ° — ángulo mínimo Donor-Aceptor-Antecedente
   Angle_Hidrogen_Bonds_Max: 180   # ° — tope real: angle_three_points nunca supera 180°
+  Aromatic_Parallel_Max: 30       # ° — ángulo entre planos < este valor
+  Aromatic_TShaped_Min: 60        # ° — ángulo entre planos > este valor (hasta 90°)
 
 aromaticidad:
   Ring_Planarity_RMSD_Max: 0.15   # Å — RMSD máximo al plano de mejor ajuste para
@@ -35,6 +41,15 @@ pockets:
                               # alrededor del fragmento (pocket real), R alto = todos del mismo lado
   density_radius: 5.0        # Å — radio de vecindad para Density_Score (densidad hidrofóbica local
                               # estilo fpocket); más alto = cuenta vecinos más lejos, score más suave
+
+hotspot_pocket:              # modo --hotspots (pockets a partir de hotspots de dinámica)
+  link_distance: 8.0         # Å — hotspots cuyos centros están a menos de esto se agrupan en un mismo sitio
+  min_hotspots: 3            # sitios con menos hotspots no generan pocket
+  residue_cutoff: 4.0        # Å — residuos con algún átomo pesado a menos de esto de un punto del hotspot
+  grid_spacing: 0.375        # Å — espaciado de la grilla (0.375 = AutoDock)
+  grid_clash: 2.6            # Å — puntos de grilla más cerca que esto de un átomo pesado se descartan
+  grid_buriedness: 0.4       # 0-1 — fracción mínima de rayos que chocan con la proteína (dentro de 10 Å)
+  grid_dg_threshold: -1.0    # kcal/mol — ΔG mínimo en algún .dx para asignar Best_Type (si no, 'none')
 
 acceptors:
   ALA: [O]
@@ -80,14 +95,14 @@ donors:
   VAL: [N]
   PHE: [N]
   TRP: [N,HE1,NE1]
-  TYR: [N,HH]
+  TYR: [N,HH,OH]  # OH permite analizar cristales sin H explícitos
   ASP: [N]
   GLU: [N]
   ARG: [N,HNE,HH11,HH12,HH21,HH22,HE,NE,NH1,NH2] ## ver bien esto
   HIS: [N,ND1,NE2]
   LYS: [N,HZ1,HZ2,HZ3,NZ]
-  SER: [N,HG]
-  THR: [N,HG1]
+  SER: [N,HG,OG]
+  THR: [N,HG1,OG1]
   CYS: [N]
   MET: [N]
   ASN: [N,HD21,HD22,ND,ND2]
@@ -98,4 +113,3 @@ donors:
 
 special:
   HEM: [FE , 1.59] # Fe central grupo hemo
-

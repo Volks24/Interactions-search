@@ -14,6 +14,7 @@ __all__ = [
     "scripting_vmd_hydrophobic",
     "scripting_vmd_pockets",
     "scripting_vmd_combined",
+    "scripting_vmd_probe",
 ]
 
 
@@ -269,3 +270,46 @@ def scripting_vmd_combined(DF_Interacciones, receptor_points, DF_Lig, df_pocket_
 
         VDM_TCL.write('\n# --- Interacciones H-bond / aromaticas ---\n')
         _write_hbond_aromatic_lines(VDM_TCL, DF_Interacciones, receptor_points, DF_Lig, chain)
+
+
+_VMD_PROBE_COLORS = {'acceptor': 'red', 'donor': 'yellow', 'aromatic': 'white',
+                     'hydrophobic': 'orange', 'salt_bridge': 'blue', 'pi_cation': 'green'}
+
+
+def scripting_vmd_probe(DF_probe_true, Prot, probe_pdb, chain, folder):
+    """.tcl del modo sondeo: receptor (Lines) + residuos que interactúan
+    (Licorice) + puntos de sondeo (esferas VDW, color por resname
+    ACC/DON/ARO/HPH/CAT/ANI/PRB) y una línea punteada con la distancia por cada
+    interacción validada, usando Probe_X/Y/Z y Rec_X/Y/Z ya calculados en
+    probe_interactions() (no hace falta rebuscar coordenadas)."""
+    receptor_name = Path(Prot).stem
+    Prot_file  = Path(Prot).name
+    Probe_file = Path(probe_pdb).name
+    residues = ' '.join(sorted({str(int(p)) for p in DF_probe_true['Pos R']}))
+
+    with open(f'{folder}/vmd_probe_{receptor_name}.tcl', 'w') as VDM_TCL:
+        VDM_TCL.write('display projection orthographic\n')
+        VDM_TCL.write(f'set molReceptor [mol new "{Prot_file}"]\n')
+        VDM_TCL.write('mol modselect 0 $molReceptor all\n')
+        VDM_TCL.write('mol modstyle 0 $molReceptor Lines 3\n')
+        VDM_TCL.write('mol modcolor 0 $molReceptor ColorID 6\n')
+        VDM_TCL.write('mol modmaterial 0 $molReceptor Opaque\n')
+        if residues:
+            VDM_TCL.write('mol addrep $molReceptor\n')
+            VDM_TCL.write(f'mol modselect 1 $molReceptor "resid {residues} and chain {chain}"\n')
+            VDM_TCL.write('mol modstyle 1 $molReceptor Licorice\n')
+        VDM_TCL.write(f'set molProbe [mol new "{Probe_file}"]\n')
+        VDM_TCL.write('mol modstyle 0 $molProbe VDW 0.5 12\n')
+        VDM_TCL.write('mol modcolor 0 $molProbe ResName\n')
+        VDM_TCL.write('display resetview\n')
+
+        for _, row in DF_probe_true.iterrows():
+            x1, y1, z1 = row['Probe_X'], row['Probe_Y'], row['Probe_Z']
+            x2, y2, z2 = row['Rec_X'], row['Rec_Y'], row['Rec_Z']
+            color = _VMD_PROBE_COLORS.get(row['Type'], 'white')
+            VDM_TCL.write(f'graphics $molProbe color {color}\n')
+            VDM_TCL.write(f'graphics $molProbe line {{{x1} {y1} {z1}}} {{{x2} {y2} {z2}}} '
+                          'width 5 style dashed\n')
+            VDM_TCL.write('graphics $molProbe color white\n')
+            VDM_TCL.write(f'graphics $molProbe text {{{(x1 + x2) / 2:.3f} {(y1 + y2) / 2:.3f} '
+                          f'{(z1 + z2) / 2:.3f}}} "{row["Dist"]:.2f} A"\n')

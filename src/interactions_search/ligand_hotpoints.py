@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 from openbabel import openbabel as ob
 from rdkit import Chem
-from rdkit.Chem import rdDepictor
+from rdkit.Chem import Lipinski, rdDepictor
 from rdkit.Chem.Draw import rdMolDraw2D
 
 from interactions_search.geometry import _ring_planarity_rmsd
@@ -82,7 +82,7 @@ def _draw_mol_labeled(mol, highlight_atoms, atom_labels, filename, size=(600, 60
         fh.write(drawer.GetDrawingText())
 
 
-def search_hot_points(Ligand_imput, mol, pdb_coords, ligand_plot, folder):
+def search_hot_points(Ligand_imput, mol, pdb_coords, ligand_plot, folder, *, reference_chemistry=False):
 
     # [N;H1] se saco de acceptor_smarts: en RDKit [N;H] (donor_smarts) es
     # exactamente [N;H1], asi que un N con un solo H (amina secundaria,
@@ -113,9 +113,31 @@ def search_hot_points(Ligand_imput, mol, pdb_coords, ligand_plot, folder):
     # sean carbonilo/sulfonilo/carboxilato (ver docstring de
     # _openbabel_h_flags). Se descartan los "donor" que OpenBabel dice que
     # no tienen ningun H real.
-    ob_has_h = _openbabel_h_flags(Ligand_imput, mol.GetNumAtoms())
-    if ob_has_h is not None:
-        donor_atoms = [idx for idx in donor_atoms if ob_has_h[idx]]
+    if reference_chemistry:
+        # BaseFeatures includes ionizable tertiary amines as potential donors.
+        # H-bond roles must instead respect the supplied protonation state.
+        # Match on a copy with H collapsed: explicit O-H bonds can otherwise
+        # satisfy the alcohol acceptor SMARTS through the H neighbor in acids.
+        heavy = Chem.Mol(mol)
+        for atom in heavy.GetAtoms():
+            atom.SetIntProp('_interaction_index', atom.GetIdx())
+        heavy = Chem.RemoveHs(heavy)
+        acceptor_indices = {idx for match in heavy.GetSubstructMatches(Lipinski.HAcceptorSmarts)
+                            for idx in match}
+        donor_indices = {idx for match in heavy.GetSubstructMatches(Lipinski.HDonorSmarts)
+                         for idx in match}
+        # Lipinski's default nH pattern covers neutral pyrrole, not pyridinium.
+        donor_indices.update(a.GetIdx() for a in heavy.GetAtoms()
+                             if a.GetAtomicNum() == 7 and a.GetIsAromatic()
+                             and a.GetFormalCharge() > 0 and a.GetTotalNumHs() > 0)
+        acceptor_atoms = sorted(heavy.GetAtomWithIdx(i).GetIntProp('_interaction_index')
+                                for i in acceptor_indices)
+        donor_atoms = sorted(heavy.GetAtomWithIdx(i).GetIntProp('_interaction_index')
+                             for i in donor_indices)
+    else:
+        ob_has_h = _openbabel_h_flags(Ligand_imput, mol.GetNumAtoms())
+        if ob_has_h is not None:
+            donor_atoms = [idx for idx in donor_atoms if ob_has_h[idx]]
 
     if ligand_plot == 'Yes':
         stem = Path(Ligand_imput).stem
@@ -135,16 +157,18 @@ def generate_df_ligand(pdb_coords):
     return(df_ligand)
 
 
-def search_rings(mol, pdb_coords, numero_anillo_aromatico, planarity_rmsd_max):
+def search_rings(mol, pdb_coords, numero_anillo_aromatico, planarity_rmsd_max, *, reference_chemistry=False):
     """Identifica anillos aromáticos: tamaño > numero_anillo_aromatico y planos
     (RMSD respecto del plano de mejor ajuste por debajo de planarity_rmsd_max).
-    No se usa mol.GetIsAromatic(): RDKit no perfila aromaticidad de forma fiable
-    para moléculas leídas desde PDB (sin órdenes de enlace explícitos), así que
-    la planaridad geométrica 3D es el criterio real de aromaticidad aquí."""
+    Con referencia química también se exige aromaticidad asignada. Sin ella
+    se conserva la aproximación geométrica, porque el PDB puede carecer de
+    órdenes de enlace. El pipeline usa tamaño > 4, o > 5 con legacy_rings."""
     ring_info = mol.GetRingInfo()
     ring_atoms = ring_info.AtomRings()
     ring_data = []
     for ring in ring_atoms:
+        if reference_chemistry and not all(mol.GetAtomWithIdx(i).GetIsAromatic() for i in ring):
+            continue
         if len(ring) > numero_anillo_aromatico and \
            _ring_planarity_rmsd(pdb_coords, ring) <= planarity_rmsd_max:
             ring_data.append({'Ring': len(ring_data) + 1, 'Atoms': ring, 'Ring Size': len(ring)})
@@ -168,7 +192,7 @@ def visualize_rings(mol, ring_data, Ligand_imput, folder):
     rdDepictor.Compute2DCoords(mol_copy)
     highlight, colors, radii = [], {}, {}
     for ring in ring_data:
-        if ring['Ring Size'] > 5:
+        if ring['Ring Size'] >= 5:
             rnum  = ring['Ring']
             color = _RING_COLORS[(rnum - 1) % len(_RING_COLORS)]
             atoms = ring['Atoms']

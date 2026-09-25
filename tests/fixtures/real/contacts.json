@@ -1,0 +1,16 @@
+{
+  "description": "Manually selected atom pairs; distances/angles measured independently from deposited coordinates. Yes/No use the documented default geometric criteria, not an experimental H-bond annotation.",
+  "contacts": [
+    {"pdb": "1iep", "type": "acceptor", "ligand": "N3", "residue": 318, "resname": "MET", "atom": "N", "antecedent": "C4", "distance": 2.899270, "angle": 119.970653, "status": "Yes"},
+    {"pdb": "1iep", "type": "acceptor", "ligand": "O29", "residue": 381, "resname": "ASP", "atom": "N", "antecedent": "C22", "distance": 2.900705, "angle": 112.100288, "status": "Yes"},
+    {"pdb": "1iep", "type": "donor", "ligand": "N13", "residue": 315, "resname": "THR", "atom": "OG1", "antecedent": "CB", "distance": 2.883188, "angle": 126.949535, "status": "Yes"},
+    {"pdb": "1iep", "type": "donor", "ligand": "N21", "residue": 286, "resname": "GLU", "atom": "OE2", "antecedent": "CD", "distance": 2.995906, "angle": 156.650392, "status": "Yes"},
+    {"pdb": "1iep", "type": "donor", "ligand": "N21", "residue": 381, "resname": "ASP", "atom": "O", "antecedent": "C", "distance": 3.668293, "angle": 132.552873, "status": "No"},
+    {"pdb": "1stp", "type": "acceptor", "ligand": "O3", "residue": 23, "resname": "ASN", "atom": "ND2", "antecedent": "C3", "distance": 2.992381, "angle": 114.929914, "status": "Yes"},
+    {"pdb": "1stp", "type": "acceptor", "ligand": "O3", "residue": 27, "resname": "SER", "atom": "OG", "antecedent": "C3", "distance": 2.771046, "angle": 127.997285, "status": "Yes"},
+    {"pdb": "1stp", "type": "acceptor", "ligand": "O3", "residue": 43, "resname": "TYR", "atom": "OH", "antecedent": "C3", "distance": 2.584910, "angle": 126.426031, "status": "Yes"},
+    {"pdb": "1stp", "type": "donor", "ligand": "N1", "residue": 128, "resname": "ASP", "atom": "OD2", "antecedent": "CG", "distance": 2.783620, "angle": 123.622019, "status": "Yes"},
+    {"pdb": "1stp", "type": "donor", "ligand": "N2", "residue": 45, "resname": "SER", "atom": "OG", "antecedent": "CB", "distance": 3.043874, "angle": 134.280236, "status": "Yes"},
+    {"pdb": "1stp", "type": "donor", "ligand": "N1", "residue": 128, "resname": "ASP", "atom": "OD1", "antecedent": "CG", "distance": 3.682842, "angle": 77.513829, "status": "No"}
+  ]
+}

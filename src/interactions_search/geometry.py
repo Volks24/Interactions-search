@@ -63,20 +63,16 @@ def center_of_mass(entity, geometric=False):
 
 
 def angle_three_points(Donor,Aceptor,Aceptor_Antecedent):
-
-    Donor_coord = np.array(Donor)
-
-    Aceptor_coord = np.array(Aceptor)
-
-    Aceptor_Antecedent_coord = np.array(Aceptor_Antecedent)
-
-    ba = Donor_coord-Aceptor_coord # normalization of vectors
-    bc = Aceptor_Antecedent_coord-Aceptor_coord # normalization of vectors
-
-    cosine_angle = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
-    angle = np.arccos(cosine_angle)
-
-    return (np.degrees(angle))  # calculated angle in radians to degree
+    """Angle in degrees, or NaN for missing/degenerate geometry."""
+    points = [np.asarray(p, dtype=float) for p in (Donor, Aceptor, Aceptor_Antecedent)]
+    if any(p.shape != (3,) or not np.isfinite(p).all() for p in points):
+        return np.nan
+    ba, bc = points[0] - points[1], points[2] - points[1]
+    denominator = np.linalg.norm(ba) * np.linalg.norm(bc)
+    if denominator == 0:
+        return np.nan
+    cosine_angle = np.dot(ba, bc) / denominator
+    return float(np.degrees(np.arccos(np.clip(cosine_angle, -1.0, 1.0))))
 
 
 def dihedral_angle(p0, p1, p2, p3):
@@ -127,6 +123,13 @@ def center_aromatic_ring(Aromatic_Ring):
 
 
 def get_aromatic_coord(Res,AA):
+    required = {
+        'TYR': {'CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ'},
+        'PHE': {'CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ'},
+        'TRP': {'CE3', 'CD2', 'CZ3', 'CE2', 'CZ2', 'CH2'},
+    }
+    if Res not in required or not required[Res].issubset(set(AA['Atom'])):
+        return np.full(3, np.nan)
     Aromatic_Ring = []
     if (Res == 'TYR') or (Res == 'PHE'):
             Coordenada = (AA.loc[AA['Atom'] == "CG", ['X','Y','Z']]).values.tolist()

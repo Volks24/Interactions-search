@@ -14,6 +14,7 @@ __all__ = [
     "Angles",
     "Aromaticity",
     "Pockets",
+    "HotspotPocket",
     "InteractionConfig",
     "load_config",
     "ValidationError",
@@ -42,6 +43,13 @@ class Distances(BaseModel):
     Distances_Hidrogen_Bonds: float = Field(default=3.2, gt=0, description="H-bond distance cutoff (Å)")
     Distances_Aromatic: float = Field(default=5.5, gt=0, description="Aromatic interaction distance cutoff (Å)")
     Distances_Hidrofobica: float = Field(default=4.0, gt=0, description="Hydrophobic interaction distance cutoff (Å)")
+    Hydrogen_Bond_Search_Distance: float = Field(
+        default=4.0, gt=0, allow_inf_nan=False,
+        description="H-bond candidate radius (Å); effective radius is at least the final cutoff",
+    )
+    Distances_Salt_Bridge: float = Field(default=4.0, gt=0, allow_inf_nan=False)
+    Distances_Pi_Cation: float = Field(default=5.0, gt=0, allow_inf_nan=False)
+    Probe_Clash_Distance: float = Field(default=2.5, gt=0, allow_inf_nan=False)
     centroid_distance: float = Field(default=12.0, gt=0, description="Active-site search radius (Å)")
     Distances_C_Simple: float = Field(default=1.54, gt=0, description="C–C single bond distance cutoff (Å)")
     Distances_C_Doble: float = Field(default=2.56, gt=0, description="C=C double bond distance cutoff (Å)")
@@ -58,6 +66,16 @@ class Distances(BaseModel):
 class Angles(BaseModel):
     Angle_Hidrogen_Bonds_Min: float = Field(default=100.0, ge=0, le=360, description="Minimum H-bond angle (°)")
     Angle_Hidrogen_Bonds_Max: float = Field(default=180.0, ge=0, le=360, description="Maximum H-bond angle (°)")
+    Aromatic_Parallel_Max: float = Field(default=30.0, ge=0, le=90)
+    Aromatic_TShaped_Min: float = Field(default=60.0, ge=0, le=90)
+
+    @model_validator(mode="after")
+    def _ordered_ranges(self):
+        if self.Angle_Hidrogen_Bonds_Min >= self.Angle_Hidrogen_Bonds_Max:
+            raise ValueError("Angle_Hidrogen_Bonds_Min debe ser menor que el máximo.")
+        if self.Aromatic_Parallel_Max >= self.Aromatic_TShaped_Min:
+            raise ValueError("Aromatic_Parallel_Max debe ser menor que Aromatic_TShaped_Min.")
+        return self
 
 
 class Aromaticity(BaseModel):
@@ -72,12 +90,23 @@ class Pockets(BaseModel):
     density_radius: float = Field(default=5.0, gt=0, description="Neighbourhood radius (Å) for hydrophobic density score (fpocket-style)")
 
 
+class HotspotPocket(BaseModel):
+    link_distance: float = Field(default=8.0, gt=0, description="Single-linkage distance (Å) between hotspot centers to group them into sites")
+    min_hotspots: int = Field(default=3, gt=0, description="Minimum hotspots per site to build its pocket")
+    residue_cutoff: float = Field(default=4.0, gt=0, description="Residues with a heavy atom within this distance (Å) of a hotspot point form the pocket")
+    grid_spacing: float = Field(default=0.375, gt=0, description="Pocket grid spacing (Å); 0.375 = AutoDock default")
+    grid_clash: float = Field(default=2.6, gt=0, description="Grid points closer than this (Å) to a receptor heavy atom are discarded")
+    grid_buriedness: float = Field(default=0.4, ge=0, le=1, description="Minimum fraction of rays hitting the receptor within 10 Å for a grid point to count as buried")
+    grid_dg_threshold: float = Field(default=-1.0, le=0, description="ΔG (kcal/mol) a grid point must reach in some .dx map to get a Best_Type other than 'none'")
+
+
 class InteractionConfig(BaseModel):
     options: Options = Field(default_factory=Options)
     distancias: Distances = Field(default_factory=Distances)
     angulos: Angles = Field(default_factory=Angles)
     aromaticidad: Aromaticity = Field(default_factory=Aromaticity)
     pockets: Pockets = Field(default_factory=Pockets)
+    hotspot_pocket: HotspotPocket = Field(default_factory=HotspotPocket)
     acceptors: dict[str, list[str]]
     donors: dict[str, list[str]]
     acceptors_antecedent: dict[str, dict[str, str]]

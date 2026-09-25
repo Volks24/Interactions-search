@@ -63,6 +63,8 @@ def Coordenadas_interes_receptor(Aceptores_Prot,Dadores_Prot,DF_Active_Site):
         if Atomo in aa_aro:
             Sub_Set = DF_Active_Site.query('Pos == @ID')
             x,y,z = get_aromatic_coord(Atomo,Sub_Set)
+            if not all(math.isfinite(value) for value in (x, y, z)):
+                continue  # an incomplete ring does not define the expected centroid
             if ID not in receptor_points['Pos'].values:
                 receptor_points.loc[len(receptor_points.index)] = 'aromatic',DF_Active_Site.iloc[pos,1],DF_Active_Site.iloc[pos,2],'center',x,y,z
             elif 'aromatic' not in (receptor_points.query('Pos == @ID')['Type'].tolist()) :# Solo posicion
