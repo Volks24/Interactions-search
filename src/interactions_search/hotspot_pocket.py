@@ -135,8 +135,11 @@ def _read_cluster_points(path):
     with open(path) as fh:
         for line in fh:
             if line.startswith(('ATOM', 'HETATM')):
-                pts.setdefault(int(line[22:26]), []).append(
-                    [float(line[30:38]), float(line[38:46]), float(line[46:54])])
+                # seriales > 99999 corren todas las columnas hacia la derecha
+                s = max(0, len(line[6:].split(None, 1)[0]) - 5)
+                pts.setdefault(int(line[22 + s:26 + s]), []).append(
+                    [float(line[30 + s:38 + s]), float(line[38 + s:46 + s]),
+                     float(line[46 + s:54 + s])])
     return {k: np.array(v) for k, v in pts.items()}
 
 
@@ -349,7 +352,7 @@ def _write_site_tcl(path, receptor_file, chain, residues):
         f.write('display projection orthographic\n')
         f.write(f'set molReceptor [mol new "{receptor_file}"]\n')
         f.write('mol modselect 0 $molReceptor all\n')
-        f.write('mol modstyle 0 $molReceptor Lines 3\n')
+        f.write('mol modstyle 0 $molReceptor NewCartoon 0.3 10 4.1 0\n')
         f.write('mol modcolor 0 $molReceptor ColorID 6\n')
         if resids:
             f.write('mol addrep $molReceptor\n')
@@ -363,19 +366,42 @@ def _write_site_tcl(path, receptor_file, chain, residues):
             f.write(f'mol modselect {rep} $molGrid "resname {rn}"\n')
             f.write(f'mol modstyle {rep} $molGrid Points 3\n')
             f.write(f'mol modcolor {rep} $molGrid ColorID {cid}\n')
-        f.write('\n# Hotspots (centros), radio = tipo, color por tipo\n')
-        f.write('set molHS [mol new "hotspots.pdb"]\n')
-        for rep, rn in enumerate(('ACC', 'DON', 'HPH')):
-            if rep:
-                f.write('mol addrep $molHS\n')
-            f.write(f'mol modselect {rep} $molHS "resname {rn}"\n')
-            f.write(f'mol modstyle {rep} $molHS VDW 0.6 12\n')
-            f.write(f'mol modcolor {rep} $molHS ColorID {_TYPE_COLORID[rn]}\n')
         f.write('\n# Forma del pocket: isosuperficie (wireframe) de la máscara\n')
         f.write('set molMask [mol new "pocket_mask.dx" type dx]\n')
         f.write('mol modstyle 0 $molMask Isosurface 0.5 0 0 1 1 1\n')
         f.write('mol modcolor 0 $molMask ColorID 2\n')
         f.write('display resetview\n')
+
+
+_PML_COLORS = {'ACC': 'red', 'DON': 'blue', 'HPH': 'orange', 'NON': 'white'}
+
+
+def _write_site_pml(path, receptor_file, chain, residues):
+    """Misma escena que _write_site_tcl, para PyMOL."""
+    resids = '+'.join(str(p) for p in residues['Pos'])
+    with open(path, 'w') as f:
+        f.write(f'load {receptor_file}, receptor\n')
+        f.write('hide everything, receptor\n')
+        f.write('show cartoon, receptor\n')
+        f.write('color grey70, receptor\n')
+        if resids:
+            f.write(f'select pocket, receptor and chain {chain} and resi {resids}\n')
+            f.write('show sticks, pocket and not name N+C+O and not hydro\n')
+            f.write('color grey50, pocket and elem C\n')
+        f.write('\n# Grilla del pocket: un punto por vóxel, color por Best_Type\n')
+        f.write('load grid.pdb, grid\n')
+        f.write('hide everything, grid\n')
+        f.write('show spheres, grid\n')
+        f.write('set sphere_scale, 0.08, grid\n')
+        for rn, color in _PML_COLORS.items():
+            f.write(f'color {color}, grid and resn {rn}\n')
+        f.write('\n# Forma del pocket: isosuperficie (malla) de la máscara\n')
+        f.write('load pocket_mask.dx, mask\n')
+        f.write('isomesh pocket_mesh, mask, 0.5\n')
+        f.write('color green, pocket_mesh\n')
+        f.write('\nset orthoscopic, on\n')
+        f.write('orient grid\n')
+        f.write('zoom grid, 8\n')
 
 
 @record_analysis('hotspots')
@@ -417,8 +443,6 @@ def analyze_hotspot_pockets(receptor_pdb, chain, hotspot_dir, cfg, hp, exclude_r
             summary.append({**row, 'Built': 'No'})
             continue
 
-        site_dir = folder / f'site_{site}'
-        site_dir.mkdir(exist_ok=True)
         site_pts = np.vstack([points[h] for h in site_hs['HS_ID']])
 
         residues = _pocket_residues(site_hs, points, heavy, heavy_tree, hp.residue_cutoff)
@@ -432,6 +456,13 @@ def analyze_hotspot_pockets(receptor_pdb, chain, hotspot_dir, cfg, hp, exclude_r
             mask, bur = np.zeros(shape, dtype=bool), np.zeros(shape)
         kept = np.argwhere(mask)
         xyz = origin + kept * hp.grid_spacing
+        volume = round(len(kept) * hp.grid_spacing ** 3, 1)
+        if volume < hp.min_volume:
+            summary.append({**row, 'Built': 'No', 'N_Residues': len(residues), 'Volume_A3': volume})
+            continue
+
+        site_dir = folder / f'site_{site}'
+        site_dir.mkdir(exist_ok=True)
 
         # Puntos de interés del receptor (donores/aceptores/anillos) solo de los
         # residuos cercanos al sitio: todo lo que pueda quedar a distancia de
@@ -456,13 +487,14 @@ def analyze_hotspot_pockets(receptor_pdb, chain, hotspot_dir, cfg, hp, exclude_r
         write_dx(site_dir / 'pocket_mask.dx', origin, hp.grid_spacing, mask.astype(float))
         shutil.copy(receptor_pdb, site_dir / Path(receptor_pdb).name)
         _write_site_tcl(site_dir / f'vmd_site_{site}.tcl', Path(receptor_pdb).name, chain, residues)
+        _write_site_pml(site_dir / f'pymol_site_{site}.pml', Path(receptor_pdb).name, chain, residues)
 
         type_frac = grid['Best_Type'].value_counts(normalize=True) if len(grid) else pd.Series()
         row.update({'Built': 'Yes', 'N_Residues': len(residues),
                     'Residues': ','.join(f"{r}{p}" for p, r in zip(residues['Pos'],
                                                                    residues['Residue'])),
                     'Grid_Points': len(grid),
-                    'Volume_A3': round(len(grid) * hp.grid_spacing ** 3, 1),
+                    'Volume_A3': volume,
                     **{f'Frac_{t}': round(float(type_frac.get(t, 0.0)), 3)
                        for t in ('acceptor', 'donor', 'hydrophobic', 'none')}})
         summary.append(row)
@@ -478,10 +510,19 @@ def analyze_hotspot_pockets(receptor_pdb, chain, hotspot_dir, cfg, hp, exclude_r
 
     df_summary = pd.DataFrame(summary)
     df_summary.to_csv(folder / 'sites_summary.csv', index=False)
+    # solo los sitios que pasaron los filtros (min_hotspots, min_volume)
+    df_summary[df_summary['Built'] == 'Yes'].drop(columns='Built').to_csv(
+        folder / 'sites_final.csv', index=False)
     skipped = df_summary[df_summary['Built'] == 'No']
-    if not skipped.empty:
+    few = skipped[skipped['N_Hotspots'] < hp.min_hotspots]
+    small = skipped[skipped['N_Hotspots'] >= hp.min_hotspots]
+    if not few.empty:
         print(f"  {'─'*74}")
-        print(f"  {len(skipped)} site(s) with < {hp.min_hotspots} hotspots skipped: "
-              f"{', '.join(skipped['Hotspots'])}")
-    print(f"  -> {folder}/sites_summary.csv\n")
+        print(f"  {len(few)} site(s) with < {hp.min_hotspots} hotspots skipped: "
+              f"{', '.join(few['Hotspots'])}")
+    if not small.empty:
+        print(f"  {len(small)} site(s) with pocket < {hp.min_volume} Å³ skipped: "
+              f"{', '.join(f'{s} ({v} Å³)' for s, v in zip(small['Site'], small['Volume_A3']))}")
+    print(f"  -> {folder}/sites_summary.csv (todos)")
+    print(f"  -> {folder}/sites_final.csv ({(df_summary['Built'] == 'Yes').sum()} sitios que pasan los filtros)\n")
     return df_summary

@@ -93,6 +93,7 @@ class Pockets(BaseModel):
 class HotspotPocket(BaseModel):
     link_distance: float = Field(default=8.0, gt=0, description="Single-linkage distance (Å) between hotspot centers to group them into sites")
     min_hotspots: int = Field(default=3, gt=0, description="Minimum hotspots per site to build its pocket")
+    min_volume: float = Field(default=0.0, ge=0, description="Minimum pocket grid volume (Å³); smaller sites are skipped")
     residue_cutoff: float = Field(default=4.0, gt=0, description="Residues with a heavy atom within this distance (Å) of a hotspot point form the pocket")
     grid_spacing: float = Field(default=0.375, gt=0, description="Pocket grid spacing (Å); 0.375 = AutoDock default")
     grid_clash: float = Field(default=2.6, gt=0, description="Grid points closer than this (Å) to a receptor heavy atom are discarded")

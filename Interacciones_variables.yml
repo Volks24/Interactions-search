@@ -43,8 +43,9 @@ pockets:
                               # estilo fpocket); más alto = cuenta vecinos más lejos, score más suave
 
 hotspot_pocket:              # modo --hotspots (pockets a partir de hotspots de dinámica)
-  link_distance: 8.0         # Å — hotspots cuyos centros están a menos de esto se agrupan en un mismo sitio
+  link_distance: 4.0         # Å — hotspots cuyos centros están a menos de esto se agrupan en un mismo sitio
   min_hotspots: 3            # sitios con menos hotspots no generan pocket
+  min_volume: 50.0           # Å³ — sitios con pocket (grilla enterrada) más chico se descartan
   residue_cutoff: 4.0        # Å — residuos con algún átomo pesado a menos de esto de un punto del hotspot
   grid_spacing: 0.375        # Å — espaciado de la grilla (0.375 = AutoDock)
   grid_clash: 2.6            # Å — puntos de grilla más cerca que esto de un átomo pesado se descartan
